@@ -21,11 +21,26 @@ def run_setup():
         'numpy',
         'pillow',
         'scipy',
-        'torch',    # should be installed before running this!
-        'torchvision',    # should be installed before running this!
         'torchmetrics==0.6.2',
-        'nicr_scene_analysis_datasets==0.4.0'
+        'nicr_scene_analysis_datasets>=0.4.1'
     ]
+
+    # torch and torchvision should be installed before running this!
+    try:
+        import torch
+    except ImportError:
+        raise ImportError(
+            "Torch not found. Please install PyTorch before on "
+            "your own: https://pytorch.org/get-started/locally/"
+        )
+
+    try:
+        import torchvision
+    except ImportError:
+        raise ImportError(
+            "TorchVision not found. Please install TorchVision before on "
+            "your own: https://pytorch.org/get-started/locally/"
+        )
 
     if sys.version_info <= (3, 7):
         # python 3.6 does not support dataclasses (install backport)
