@@ -312,12 +312,12 @@ class InstanceTaskHelper(TaskHelperBase):
             orientations_targets = None
 
         # For evaluating the quality of the instance segmentation, without
-        # semantic labels, we use ground truth data for also evalauting the
+        # semantic labels, we use ground truth data for also evaluating the
         # PQ/RQ.
-        # This is usefull for comparing the single task performance vs. the
+        # This is useful for comparing the single task performance vs. the
         # performance of the instance task helper in the multi task setup.
         # Usually a AP computation would be a better metric for instance
-        # segmentation. However we arn't directly interested in only using
+        # segmentation. However, we are not directly interested in only using
         # the instance segmentation stand alone, which is why we compute the PQ
         # by using the ground truth semantic segmentation for merging.
         # Note that we also use the ground truth foreground mask, as we
@@ -356,7 +356,7 @@ class InstanceTaskHelper(TaskHelperBase):
             panoptic_targets_id_dicts
         )
 
-        # store example for visualization
+        # store example for visualization (not fullres!)
         if batch_idx == 0:
             center, offset, *orientation = predictions_post['instance_output']
 
@@ -376,9 +376,13 @@ class InstanceTaskHelper(TaskHelperBase):
             self._examples[key] = visualize_instance_offset_pil(ex)
 
             # predicted centers (after nms, thresholding, and top-k)
-            ex = predictions_post['instance_predicted_centers'][0].cpu().numpy()
+            ex_meta = predictions_post['instance_segmentation_gt_meta'][0]
             key = f'instance_predicted_centers_example_batch_{batch_idx}_0'
-            self._examples[key] = visualize_instance_center_pil(ex)
+            self._examples[key] = visualize_instance_center_pil(
+                centers=tuple(i['center_yx'] for i in ex_meta.values()),
+                height=center.shape[-2],
+                width=center.shape[-1],
+            )
 
             # final instances
             ex = predictions_post['instance_segmentation_gt_foreground'].cpu().numpy()[0]

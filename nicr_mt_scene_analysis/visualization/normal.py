@@ -8,7 +8,7 @@ from PIL.Image import Image
 from ._pil import to_pil_img
 
 
-def visualize_normal(normal_img: np.array) -> np.array:
+def visualize_normal(normal_img: np.ndarray) -> np.ndarray:
     # assumes for normal: -1 <= normal <= 1, 3 channels, and channels last
     assert normal_img.ndim == 3
     assert normal_img.shape[-1] == 3
@@ -23,5 +23,5 @@ def visualize_normal(normal_img: np.array) -> np.array:
     return normal_img
 
 
-def visualize_normal_pil(normal_img: np.array) -> Image:
+def visualize_normal_pil(normal_img: np.ndarray) -> Image:
     return to_pil_img(visualize_normal(normal_img), palette=None)

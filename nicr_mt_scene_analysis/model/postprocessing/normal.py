@@ -8,10 +8,10 @@ from ...data.preprocessing.resize import get_fullres_shape
 from ...types import BatchType
 from ...types import DecoderRawOutputType
 from ...types import PostprocessingOutputType
-from .dense_base import DensePostProcessingBase
+from .dense_base import DensePostprocessingBase
 
 
-class NormalPostprocessing(DensePostProcessingBase):
+class NormalPostprocessing(DensePostprocessingBase):
     def __init__(self, **kwargs) -> None:
         super().__init__()
 

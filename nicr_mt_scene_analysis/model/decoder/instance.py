@@ -21,6 +21,7 @@ from ..utils import ConvNormAct
 from ..postprocessing import get_postprocessing_class
 from ..postprocessing import PostProcessingType
 from .dense_base import DenseDecoderBase
+from .mlp_base import MLPDecoderBase
 
 
 class InstanceHead(nn.Module):
@@ -125,11 +126,13 @@ class InstanceDecoder(DenseDecoderBase):
         self,
         n_channels_in: int,
         downsampling_in: int,
-        n_channels: Tuple[int, int, int],
+        n_channels: Tuple[int, ...],
+        downsamplings: Tuple[int, ...],
         block: Type[BlockType],
         n_blocks: int,
         fusion: Type[EncoderDecoderFusionType],
-        fusion_n_channels: Tuple[int, int, int],
+        fusion_n_channels: Tuple[int, ...],
+        fusion_downsamplings: Tuple[int, ...],
         n_channels_per_task: int = 32,
         with_orientation: bool = False,
         sigmoid_for_center: bool = True,
@@ -143,10 +146,12 @@ class InstanceDecoder(DenseDecoderBase):
         super().__init__(n_channels_in=n_channels_in,
                          downsampling_in=downsampling_in,
                          n_channels=n_channels,
+                         downsamplings=downsamplings,
                          block=block,
                          n_blocks=n_blocks,
                          fusion=fusion,
                          fusion_n_channels=fusion_n_channels,
+                         fusion_downsamplings=fusion_downsamplings,
                          postprocessing=postprocessing,
                          normalization=normalization,
                          activation=activation,
@@ -161,12 +166,12 @@ class InstanceDecoder(DenseDecoderBase):
             normalization=normalization,
             activation=activation,
             upsampling=prediction_upsampling,
-            n_upsamplings=int(log2(downsampling_in / 2**len(n_channels))),
+            n_upsamplings=int(log2(downsamplings[-1]))
         )
 
         # heads for side outputs
         side_output_heads = []
-        for n in n_channels:
+        for n in self.side_output_n_channels:
             side_output_heads.append(
                 InstanceHead(
                     n_channels_in=n,
@@ -189,3 +194,57 @@ class InstanceDecoder(DenseDecoderBase):
     @property
     def side_output_heads(self) -> nn.ModuleList:
         return self._side_output_heads
+
+
+class InstanceMLPDecoder(MLPDecoderBase):
+    def __init__(
+        self,
+        n_channels_in: int,
+        downsampling_in: int,
+        n_channels: Tuple[int, ...],
+        fusion: Type[EncoderDecoderFusionType],
+        fusion_n_channels: Tuple[int, ...],
+        fusion_downsamplings: Tuple[int, ...],
+        n_channels_per_task: int = 32,
+        with_orientation: bool = False,
+        sigmoid_for_center: bool = True,
+        tanh_for_offset: bool = True,
+        downsampling_in_heads: int = 4,
+        dropout_p: float = 0.1,
+        postprocessing: Type[PostProcessingType] = get_postprocessing_class('instance'),
+        normalization: Type[nn.Module] = get_normalization_class(),
+        activation: Type[nn.Module] = get_activation_class(),
+        upsampling: Type[UpsamplingType] = get_upsampling_class(),
+        prediction_upsampling: Type[UpsamplingType] = get_upsampling_class()
+    ) -> None:
+        super().__init__(n_channels_in=n_channels_in,
+                         downsampling_in=downsampling_in,
+                         n_channels=n_channels,
+                         fusion=fusion,
+                         fusion_n_channels=fusion_n_channels,
+                         fusion_downsamplings=fusion_downsamplings,
+                         downsampling_in_heads=downsampling_in_heads,
+                         dropout_p=dropout_p,
+                         postprocessing=postprocessing,
+                         normalization=normalization,
+                         activation=activation,
+                         upsampling=upsampling)
+
+        self._downsampling_in_heads = downsampling_in_heads
+
+        # final task head
+        self._task_head = InstanceHead(
+            n_channels_in=sum(n_channels)//len(n_channels),
+            n_channels_per_task=n_channels_per_task,
+            with_orientation=with_orientation,
+            sigmoid_for_center=sigmoid_for_center,
+            tanh_for_offset=tanh_for_offset,
+            normalization=normalization,
+            activation=activation,
+            upsampling=prediction_upsampling,
+            n_upsamplings=self._downsampling_in_heads//2,   # each doubles res.
+        )
+
+    @property
+    def task_head(self) -> nn.Module:
+        return self._task_head

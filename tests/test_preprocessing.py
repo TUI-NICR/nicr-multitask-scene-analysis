@@ -28,6 +28,7 @@ from nicr_mt_scene_analysis.data.preprocessing import RandomHorizontalFlip
 from nicr_mt_scene_analysis.data.preprocessing import RandomHSVJitter
 from nicr_mt_scene_analysis.data.preprocessing import RandomResize
 from nicr_mt_scene_analysis.data.preprocessing import Resize
+from nicr_mt_scene_analysis.data.preprocessing import SemanticClassMapper
 from nicr_mt_scene_analysis.data.preprocessing import ToTorchTensors
 from nicr_mt_scene_analysis.data.preprocessing import TorchTransformWrapper
 from nicr_mt_scene_analysis.data.preprocessing.utils import _get_relevant_spatial_keys
@@ -429,6 +430,36 @@ def test_hsvjitter_limits(img,
     show_results({'rgb': img}, {'rgb': img_pre},
                  f'HSVJitterLimits: h: {hue_jitter_offset*2}, '
                  f's: {saturation_jitter_offset}, v: {value_jitter_offset}')
+
+
+def test_semanticclassmapper():
+    """Test SemanticClassMapper"""
+    classes_to_map = (1, 10)    # see get_dummy_samples
+    new_label = 0
+    pre = SemanticClassMapper(
+        classes_to_map=classes_to_map,
+        new_label=new_label
+    )
+
+    # get sample
+    sample = get_dummy_sample()
+
+    # apply preprocessor
+    sample_pre = pre(deepcopy(sample))
+
+    # check that mapping was applied
+    mask_changed = np.zeros_like(sample['semantic'], dtype=np.bool)
+    for c in classes_to_map:
+        mask = sample['semantic'] == c
+        assert (sample_pre['semantic'][mask] == new_label).all()
+
+        mask_changed = np.logical_or(mask_changed, mask)
+
+    # check that remaining pixels are unchanged
+    mask = np.logical_not(mask_changed)
+    assert (sample_pre['semantic'][mask] == sample['semantic'][mask]).all()
+
+    show_results(sample, sample_pre, f'SemanticClassMapper')
 
 
 def test_totorchtensors():

@@ -4,20 +4,20 @@
 .. codeauthor:: Daniel Seichter <daniel.seichter@tu-ilmenau.de>
 """
 import abc
-from typing import Tuple, Type
+from typing import Optional, Tuple, Type
 
 import torch.nn as nn
 from torch import Tensor
 
+from ...types import DecoderInputType
+from ...types import DenseDecoderModuleOutputType
+from ...types import DecoderRawOutputType
+from ...types import EncoderSkipsType
 from ..activation import get_activation_class
 from ..block import BlockType
 from ..encoder_decoder_fusion import EncoderDecoderFusionType
 from ..normalization import get_normalization_class
 from ..postprocessing import PostProcessingType
-from ...types import DecoderInputType
-from ...types import DenseDecoderModuleOutputType
-from ...types import DecoderRawOutputType
-from ...types import EncoderSkipsType
 from ..upsampling import get_upsampling_class
 from ..upsampling import UpsamplingType
 from ..utils import ConvNormAct
@@ -34,7 +34,7 @@ class DenseDecoderModule(nn.Module):
         initial_conv: bool = True,
         activation: Type[nn.Module] = get_activation_class(),
         normalization: Type[nn.Module] = get_normalization_class(),
-        upsampling: Type[UpsamplingType] = get_upsampling_class()
+        upsampling: Optional[Type[UpsamplingType]] = get_upsampling_class()
     ) -> None:
         super().__init__()
 
@@ -77,13 +77,18 @@ class DenseDecoderModule(nn.Module):
         self.blocks = nn.Sequential(*blocks)
 
         # final upsampling
-        self.upsample = upsampling(n_channels=n_channels)
+        if upsampling is not None:
+            # perform upsampling (by factor of 2)
+            self.upsample = upsampling(n_channels=n_channels)
+        else:
+            # skip upsampling
+            self.upsample = nn.Identity()
 
     def forward(self, x: Tensor) -> DenseDecoderModuleOutputType:
         out = self.conv(x)
         out = self.blocks(out)
 
-        # for pyramid supervision
+        # for multiscale supervision
         out_side = out if self.training else None
 
         out = self.upsample(out)
@@ -96,11 +101,13 @@ class DenseDecoderBase(DecoderBase):
         self,
         n_channels_in: int,
         downsampling_in: int,
-        n_channels: Tuple[int, int, int],
+        n_channels: Tuple[int, ...],
+        downsamplings: Tuple[int, ...],
         block: Type[BlockType],
         n_blocks: int,
         fusion: Type[EncoderDecoderFusionType],
-        fusion_n_channels: Tuple[int, int, int],
+        fusion_n_channels: Tuple[int, ...],
+        fusion_downsamplings: Tuple[int, ...],
         postprocessing: Type[PostProcessingType],
         normalization: Type[nn.Module] = get_normalization_class(),
         activation: Type[nn.Module] = get_activation_class(),
@@ -108,10 +115,52 @@ class DenseDecoderBase(DecoderBase):
     ) -> None:
         super().__init__(postprocessing=postprocessing)
 
-        # decoder modules
+        # perform some simple sanity checks
+        assert len(n_channels) == len(downsamplings)
+        assert sorted(downsamplings, reverse=True) == list(downsamplings)
+        assert all(d <= downsampling_in for d in downsamplings)
+
+        assert len(fusion_n_channels) == len(fusion_downsamplings)
+        assert sorted(fusion_downsamplings,
+                      reverse=True) == list(fusion_downsamplings)
+
+        # create decoder and fusion modules
+        # note, the number of decoder modules is determined by
+        # len(n_channels) / len(downsamplings), moreover, note that we create
+        # side outputs only if downsampling is decreased
+        cur_downsampling = downsampling_in
         decoder_modules = []
-        for n_in, n_out in zip((n_channels_in,) + n_channels[:-1],
-                               n_channels):
+        fusions = []
+
+        side_output_downscales = []
+        side_output_n_channels = []
+        decoder_modules_consider_side_output = []
+        decoder_modules_fusion_downsamplings = []
+
+        n_dec_in = (n_channels_in,) + n_channels[:-1]
+        n_dec_out = n_channels
+
+        for i in range(len(n_channels)):
+            # decoder module
+            n_in = n_dec_in[i]
+            n_out = n_dec_out[i]
+            ds = downsamplings[i]
+
+            if ds < cur_downsampling:
+                # decoder module should perform upsampling, create side output
+                # before upsampling
+                decoder_modules_consider_side_output.append(True)
+                side_output_downscales.append(cur_downsampling)
+                side_output_n_channels.append(n_out)
+
+                do_upsampling = True
+                cur_downsampling = ds
+            else:
+                # no upsampling, no side output required
+                decoder_modules_consider_side_output.append(False)
+
+                do_upsampling = False
+
             decoder_modules.append(
                 DenseDecoderModule(
                     n_channels_in=n_in,
@@ -120,29 +169,40 @@ class DenseDecoderBase(DecoderBase):
                     n_blocks=n_blocks,
                     activation=activation,
                     normalization=normalization,
-                    upsampling=upsampling
+                    upsampling=upsampling if do_upsampling else None
                 )
             )
+
+            # fusion
+            if cur_downsampling in fusion_downsamplings:
+                # encoder features should be fused
+                decoder_modules_fusion_downsamplings.append(cur_downsampling)
+
+                n_skip = fusion_n_channels[len(fusions)]
+                fusions.append(
+                    fusion(
+                        n_channels_encoder=n_skip,
+                        n_channels_decoder=n_out,
+                        activation=activation,
+                        normalization=normalization
+                    )
+                )
+            else:
+                # encoder features should NOT be fused
+                decoder_modules_fusion_downsamplings.append(-1)
+
+        # convert to nn.ModuleList
         self.decoder_modules = nn.ModuleList(decoder_modules)
-        self._side_output_downscales = tuple(
-            int(downsampling_in / (2 ** i))
-            for i in range(len(decoder_modules))
+        self._side_output_downscales = tuple(side_output_downscales)
+        self._side_output_n_channels = tuple(side_output_n_channels)
+        self._decoder_modules_consider_side_output = tuple(
+            decoder_modules_consider_side_output
         )
 
-        # fusion modules
-        fusions = []
-        for n_skip, n_dec in zip(fusion_n_channels, n_channels):
-            fusions.append(
-                fusion(
-                    n_channels_encoder=n_skip,
-                    n_channels_decoder=n_dec,
-                    activation=activation,
-                    normalization=normalization
-                )
-            )
         self.fusions = nn.ModuleList(fusions)
-
-        assert len(self.decoder_modules) == len(self.fusions)
+        self._decoder_modules_fusion_downsamplings = tuple(
+            decoder_modules_fusion_downsamplings
+        )
 
     @property
     @abc.abstractmethod
@@ -155,8 +215,12 @@ class DenseDecoderBase(DecoderBase):
         pass
 
     @property
-    def side_output_downscales(self) -> Tuple[int]:
+    def side_output_downscales(self) -> Tuple[int, ...]:
         return self._side_output_downscales
+
+    @property
+    def side_output_n_channels(self) -> Tuple[int, ...]:
+        return self._side_output_n_channels
 
     def _forward_decoder_modules(
         self,
@@ -167,15 +231,26 @@ class DenseDecoderBase(DecoderBase):
         assert len(skips) == len(self.fusions)
 
         side_outputs = []
-        for dec_m, fusion, skip in zip(self.decoder_modules,
-                                       self.fusions,
-                                       skips):
+        fusion_idx = 0
+        for i in range(len(self.decoder_modules)):
+
             # apply decoder module
+            dec_m = self.decoder_modules[i]
+            consider_side_output = self._decoder_modules_consider_side_output[i]
+
             x, side_outs = dec_m(x)
-            side_outputs.append(side_outs)
+            if consider_side_output:
+                side_outputs.append(side_outs)
 
             # apply encoder-decoder fusion
-            x = fusion(x_enc=skip, x_dec=x)
+            fusion_ds = self._decoder_modules_fusion_downsamplings[i]
+            if -1 != fusion_ds:
+                fusion = self.fusions[fusion_idx]
+                # string casting is used to prevent casting keys from int to
+                # tensor(int) while exporting to ONNX
+                x = fusion(x_enc=skips[str(fusion_ds)], x_dec=x)
+
+                fusion_idx += 1
 
         return x, tuple(side_outputs)
 
@@ -188,8 +263,10 @@ class DenseDecoderBase(DecoderBase):
         x, _ = x
 
         # apply decoder modules
-        output, side_outputs = self._forward_decoder_modules(x=x,
-                                                             skips=skips)
+        output, side_outputs = self._forward_decoder_modules(
+            x=x,
+            skips=skips
+        )
 
         # apply task head and final upsampling
         output = self.task_head(output)

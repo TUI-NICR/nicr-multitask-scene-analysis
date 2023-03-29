@@ -49,7 +49,7 @@ class ConvNormAct(nn.Sequential):
         kernel_size: int = 1,
         dilation: int = 1,
         stride: int = 1,
-        normalization: Type[nn.Module] = get_normalization_class(),
+        normalization: Union[Type[nn.Module], None] = get_normalization_class(),
         activation: Union[Type[nn.Module], None] = get_activation_class()
     ) -> None:
         super().__init__()
@@ -59,10 +59,11 @@ class ConvNormAct(nn.Sequential):
         self.add_module('conv', nn.Conv2d(n_channels_in, n_channels_out,
                                           kernel_size=kernel_size,
                                           padding=padding,
-                                          bias=False,
+                                          bias=normalization is None,
                                           dilation=dilation,
                                           stride=stride))
-        self.add_module('norm', normalization(n_channels_out))
+        if normalization is not None:
+            self.add_module('norm', normalization(n_channels_out))
 
         if activation is not None:
             self.add_module('act', activation())

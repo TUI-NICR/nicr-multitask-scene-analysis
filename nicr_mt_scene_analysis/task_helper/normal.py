@@ -142,7 +142,7 @@ class NormalTaskHelper(TaskHelperBase):
             mask=mask
         )
 
-        # store example for visualization
+        # store example for visualization (not fullres!)
         if batch_idx == 0:
             ex = predictions_post['normal_output'][0].cpu().numpy()
             ex = ex.transpose(1, 2, 0)    # chw -> hwc

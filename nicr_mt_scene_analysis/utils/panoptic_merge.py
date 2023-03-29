@@ -69,7 +69,7 @@ def naive_merge_semantic_and_instance_np(
             continue
 
         semantic_labels = np.unique(sem_seg[thing_mask])
-        # Naive approche is to allways take the full semantic mask.
+        # Naive approach is to always take the full semantic mask.
         # If a instance label includes more than one semantic label, the
         # instance is divided in multiple parts.
         for class_id in semantic_labels:

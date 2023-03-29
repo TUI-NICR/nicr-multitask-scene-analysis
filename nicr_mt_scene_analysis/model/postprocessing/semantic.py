@@ -11,10 +11,10 @@ from ...data.preprocessing.resize import get_fullres_shape
 from ...types import BatchType
 from ...types import DecoderRawOutputType
 from ...types import PostprocessingOutputType
-from .dense_base import DensePostProcessingBase
+from .dense_base import DensePostprocessingBase
 
 
-class SemanticPostprocessing(DensePostProcessingBase):
+class SemanticPostprocessing(DensePostprocessingBase):
     def __init__(self, **kwargs):
         super().__init__()
 
@@ -53,8 +53,9 @@ class SemanticPostprocessing(DensePostProcessingBase):
         score, idx = torch.max(pred, dim=1)
 
         r_dict.update({
+            'semantic_softmax_scores': pred,
             'semantic_segmentation_score': score,
-            'semantic_segmentation_idx': idx
+            'semantic_segmentation_idx': idx,
         })
 
         # resize output to original shape (assume same shape for all samples)
@@ -69,12 +70,14 @@ class SemanticPostprocessing(DensePostProcessingBase):
         else:
             # no resize necessary, save that ressources
             output_fullres = output.clone()
+            pred_fullres = pred.clone()
             score_fullres = score.clone()
             idx_fullres = idx.clone()
 
         # update results dict
         r_dict.update({
-            get_fullres_key('semantic_output'): score_fullres,
+            get_fullres_key('semantic_output'): output_fullres,
+            get_fullres_key('semantic_softmax_scores'): pred_fullres,
             get_fullres_key('semantic_segmentation_score'): score_fullres,
             get_fullres_key('semantic_segmentation_idx'): idx_fullres
         })

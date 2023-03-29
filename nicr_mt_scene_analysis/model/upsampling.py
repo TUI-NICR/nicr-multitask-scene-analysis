@@ -3,7 +3,7 @@
 .. codeauthor:: Mona Koehler <mona.koehler@tu-ilmenau.de>
 .. codeauthor:: Daniel Seichter <daniel.seichter@tu-ilmenau.de>
 """
-from typing import Any, Optional, Type
+from typing import Any, Optional, Tuple, Type, Union
 
 import torch
 from torch import nn
@@ -21,8 +21,13 @@ KNOWN_UPSAMPLING_METHODS = (
 )
 
 
-class UpsamplingX2(nn.Module):
-    def __init__(self, mode: str, n_channels: int) -> None:
+class Upsampling(nn.Module):
+    def __init__(
+        self,
+        mode: str,
+        n_channels: int,
+        scale_factor: Union[float, Tuple[float, float]] = 2.,
+    ) -> None:
         super().__init__()
 
         if mode == 'bilinear':
@@ -36,6 +41,8 @@ class UpsamplingX2(nn.Module):
             # realizing bilinear interpolation
             # note, only works as supposed when feature maps are upsampled by
             # a factor of 2
+            assert scale_factor == 2. or scale_factor == (2., 2.)
+
             if mode == 'learned-3x3':
                 self.pad = nn.ReplicationPad2d((1, 1, 1, 1))
                 self.conv = nn.Conv2d(n_channels, n_channels,
@@ -69,12 +76,14 @@ class UpsamplingX2(nn.Module):
             self.conv = nn.Identity()
             self._mode = mode
 
+        self._scale_factor = scale_factor
+
     def forward(self, x: Tensor) -> Tensor:
         # note that recently, onnx op requires a scale parameter
         # _, _, h, w = x.shape
         x = interpolate(x,
                         # size=(int(h*2), int(w*2)),
-                        scale_factor=2,
+                        scale_factor=self._scale_factor,
                         mode=self._mode,
                         align_corners=self._align_corners)
         x = self.pad(x)
@@ -83,7 +92,7 @@ class UpsamplingX2(nn.Module):
         return x
 
 
-UpsamplingType = UpsamplingX2
+UpsamplingType = Upsampling
 
 
 def get_upsampling_class(
@@ -99,4 +108,4 @@ def get_upsampling_class(
         raise ValueError(f"Unknown upsampling: '{name}'")
     kwargs['mode'] = name
 
-    return partial_class(UpsamplingX2, **kwargs)
+    return partial_class(Upsampling, **kwargs)

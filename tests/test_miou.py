@@ -8,7 +8,11 @@ import numpy as np
 
 import pytest
 import torch
-from torchmetrics import IoU
+from torchmetrics import JaccardIndex as IoU
+
+# TODO: note that tests fail with MulticlassJaccardIndex in 0.10.2 and 0.11.0
+# see: https://github.com/Lightning-AI/metrics/issues/1385
+# from torchmetrics.classification import MulticlassJaccardIndex as IoU
 
 from nicr_mt_scene_analysis.metric import MeanIntersectionOverUnion
 
@@ -86,6 +90,16 @@ def test_torchmetrics_iou(n_classes_without_void):
 @pytest.mark.parametrize('n_classes_without_void', (5, 40, 100))
 def test_own_miou(n_classes_without_void):
     device = torch.device('cpu')
+
+    metric = MeanIntersectionOverUnion(
+        n_classes=n_classes_without_void
+    ).to(device)
+
+    metric_with_void = MeanIntersectionOverUnion(
+        n_classes=n_classes_without_void+1,
+        ignore_first_class=True
+    ).to(device)
+
     # reference metric
     metric_ref = IoU(
         num_classes=n_classes_without_void,
@@ -99,18 +113,20 @@ def test_own_miou(n_classes_without_void):
     metric_ref._defaults['confmat'] = metric_ref._defaults['confmat'].long()
     metric_ref.reset()
 
-    metric = MeanIntersectionOverUnion(
-        n_classes=n_classes_without_void
-    ).to(device)
-
     # update metrics several times and time updating
     times = []
+    times_with_void = []
     times_ref = []
 
     for _ in range(10):
         preds, target = get_batch(batch_size=64, height=100, width=100,
                                   n_classes_without_void=n_classes_without_void,
                                   device=device)
+
+        # update metric with void
+        start = perf_counter()
+        metric_with_void.update(preds+1, target)
+        times_with_void.append(perf_counter()-start)
 
         # mask void
         mask = target != 0
@@ -126,13 +142,20 @@ def test_own_miou(n_classes_without_void):
         metric_ref.update(preds, target)
         times_ref.append(perf_counter()-start)
 
-    miou = metric.compute()
+    miou_with_void, ious_with_void = metric_with_void.compute(return_ious=True)
+    miou, ious = metric.compute(return_ious=True)
     miou_ref = metric_ref.compute()
 
-    print(f"miou: {miou}, miou_torchmetrics: {miou_ref}")
-    assert miou == miou_ref
+    print(f"miou: {miou}, miou_with_void: {miou_with_void}, "
+          f"miou_torchmetrics: {miou_ref}")
+
+    # check results
+    assert miou == miou_with_void == miou_ref
+    assert torch.isnan(ious_with_void[0])    # void is ignored, so iou is nan
+    assert (ious_with_void[1:] == ious).all()   # remaining ious must be equal
 
     # as of 01/08/2022: MeanIntersectionOverUnion is much faster!
     print(f"time miou: {np.mean(times)}, "
+          f"time miou_with_void: {np.mean(times_with_void)}, "
           f"time metric_torchmetrics: {np.mean(times_ref)}, "
           f"speedup : {np.mean(times_ref)/np.mean(times):4.2f}")

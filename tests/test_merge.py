@@ -76,9 +76,9 @@ def test_compare_merge_methodes(name):
             sample_panoptic = sample_target['panoptic']
             sample_panoptic_ids = sample_target['panoptic_ids_to_instance_dict']
 
-            assert(naive_np == deeplab_np).all()
-            assert(naive_np == deeplab_torch.numpy()).all()
-            assert(sample_panoptic == naive_np).all()
-            assert(naive_dict_np == deeplab_dict_np)
-            assert(naive_dict_np == deeplab_dict_torch)
-            assert(naive_dict_np == sample_panoptic_ids)
+            assert (naive_np == deeplab_np).all()
+            assert (naive_np == deeplab_torch.numpy()).all()
+            assert (sample_panoptic == naive_np).all()
+            assert naive_dict_np == deeplab_dict_np
+            assert naive_dict_np == deeplab_dict_torch
+            assert naive_dict_np == sample_panoptic_ids

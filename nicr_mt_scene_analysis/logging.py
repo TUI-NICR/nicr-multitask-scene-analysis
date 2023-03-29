@@ -5,6 +5,7 @@
 from typing import Any, Dict
 
 import csv
+import os
 
 import torch
 
@@ -14,7 +15,13 @@ class CSVLogger:
         self._filepath = filepath
         self._write_interval = write_interval
 
-        self._rows = []
+        if os.path.isfile(filepath):
+            # read existing file (resumed training)
+            with open(filepath, 'r') as f:
+                csv_reader = csv.DictReader(f)
+                self._rows = list(csv_reader)
+        else:
+            self._rows = []
 
     def write(self) -> None:
         # determine keys

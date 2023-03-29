@@ -65,7 +65,7 @@ def generate_random_batch(batch, height, width, num_inst_min, num_inst_max,
             offset_batch[n_batch, 1, min_y:max_y, min_x:max_x] = x - x_coord[min_y:max_y, min_x:max_x]
             forgeground_mask_batch[n_batch, 0, min_y:max_y, min_x:max_x] = True
         centers.append(torch.tensor(centers_tmp))
-        assert(len(centers_tmp) == num_el)
+        assert len(centers_tmp) == num_el
 
     return (instances_batch, heatmap_batch, offset_batch,
             forgeground_mask_batch, centers)

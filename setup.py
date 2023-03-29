@@ -18,12 +18,16 @@ def run_setup():
     version = version_namespace['_get_version'](with_suffix=False)
 
     requirements = [
+        'matplotlib',
         'numpy',
         'pillow',
         'scipy',
-        'torchmetrics==0.6.2',
-        'nicr_scene_analysis_datasets>=0.4.1'
+        'nicr_scene_analysis_datasets>=0.5.2'
     ]
+    if sys.version_info <= (3, 7):
+        requirements.append('torchmetrics==0.8.2')
+    else:
+        requirements.append('torchmetrics==0.10.2')
 
     # torch and torchvision should be installed before running this!
     try:
@@ -59,7 +63,7 @@ def run_setup():
           author='Daniel Seichter, Söhnke Benedikt Fischedick',
           author_email='daniel.seichter@tu-ilmenau.de, '
                        'soehnke-benedikt.fischedick@tu-ilmenau.de',
-          license='Copyright 2021-2022, Neuroinformatics and Cognitive '
+          license='Copyright 2021-2023, Neuroinformatics and Cognitive '
                   'Robotics Lab TU Ilmenau, Ilmenau, Germany',
           install_requires=requirements,
           packages=find_packages(),

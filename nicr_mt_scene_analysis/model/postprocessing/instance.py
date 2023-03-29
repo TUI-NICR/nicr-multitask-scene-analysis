@@ -6,7 +6,7 @@
 Some parts of this code are based on:
     https://github.com/bowenc0221/panoptic-deeplab/blob/master/segmentation/model/post_processing/instance_post_processing.py
 """
-from typing import Dict, List
+from typing import Dict, List, Optional, Tuple, Union
 
 import torch
 import torch.nn.functional as F
@@ -17,26 +17,33 @@ from ...utils import biternion2rad
 from ...types import BatchType
 from ...types import DecoderRawOutputType
 from ...types import PostprocessingOutputType
-from .dense_base import DensePostProcessingBase
+from .dense_base import DensePostprocessingBase
 
 
-class InstancePostprocessing(DensePostProcessingBase):
+class InstancePostprocessing(DensePostprocessingBase):
     def __init__(
         self,
         heatmap_threshold: float = 0.1,
         heatmap_nms_kernel_size: int = 3,
+        heatmap_apply_foreground_mask: bool = False,
         top_k_instances: int = 64,
         normalized_offset: bool = True,
+        offset_distance_threshold: Union[None, int] = None,
         **kwargs
     ) -> None:
         super().__init__()
 
         assert heatmap_nms_kernel_size % 2 == 1
+        assert top_k_instances <= 254
         self._heatmap_nms_kernel_size = heatmap_nms_kernel_size
         self._heatmap_nms_padding = (self._heatmap_nms_kernel_size - 1) // 2
         self._heatmap_threshold = heatmap_threshold
         self._top_k_instances = top_k_instances
         self._normalized_offset = normalized_offset
+
+        # added after EMSANet release
+        self._heatmap_apply_foreground_mask = heatmap_apply_foreground_mask
+        self._offset_distance_threshold = offset_distance_threshold
 
         if 'output_width' in kwargs and 'output_height' in kwargs:
             self._mesh_grid = self._get_mesh_grid(kwargs['output_width'],
@@ -65,7 +72,8 @@ class InstancePostprocessing(DensePostProcessingBase):
 
     def _get_instance_centers(
         self,
-        center_heatmap: torch.Tensor
+        center_heatmap: torch.Tensor,
+        foreground_mask: Optional[torch.Tensor] = None,
     ) -> List[torch.Tensor]:
         # set values below threshold to -1 so they are not considered as
         # instance center
@@ -92,6 +100,12 @@ class InstancePostprocessing(DensePostProcessingBase):
 
         # change shape from (b, 1, h, w) to (b, h, w)
         center_heatmap = center_heatmap.squeeze_(dim=1)
+
+        # optionally mask out predicted centers that are not part of the
+        # foreground (note, applying the mask to the raw centers may split them
+        # in multiple blobs and, thus, may results in additional centers)
+        if self._heatmap_apply_foreground_mask:
+            center_heatmap[torch.logical_not(foreground_mask)] = -1
 
         # find the minimum value of the top-k instances for each batch
         # additionally, unsqueeze so it is (b, 1, 1)
@@ -123,10 +137,10 @@ class InstancePostprocessing(DensePostProcessingBase):
         center_heatmap: torch.Tensor,
         center_offset: torch.Tensor,
         foreground_mask: torch.Tensor
-    ) -> torch.Tensor:
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         # get instance centers
-        instance_centers, instance_centers_list = \
-            self._get_instance_centers(center_heatmap)
+        _, instance_centers_list = self._get_instance_centers(center_heatmap,
+                                                              foreground_mask)
 
         # create required mesh grid lazily
         device = center_offset.device
@@ -152,16 +166,20 @@ class InstancePostprocessing(DensePostProcessingBase):
 
         # prepare result of instance segmentation (same shape as foreground
         # mask - (b, h, w) - and same device)
-        instace_segmentation = torch.zeros_like(foreground_mask,
-                                                dtype=torch.uint8)
+        instance_segmentation = torch.zeros_like(foreground_mask,
+                                                 dtype=torch.uint8)
 
-        for idx, instance_center in enumerate(instance_centers_list):
+        # prepare additional list of dictionaries storing some meta
+        # information for the instances in each example of the batch
+        instance_meta = [{} for _ in range(b)]
+
+        for idx, centers in enumerate(instance_centers_list):
             # skip if no instances were detected
-            if instance_center.shape[0] == 0:
+            if centers.shape[0] == 0:
                 continue
 
             # create a flat view of the instance segmentation of current batch
-            instance_view = instace_segmentation[idx].view(-1)
+            instance_view = instance_segmentation[idx].view(-1)
 
             # use foreground mask to only consider pixels that are a thing
             loc = location[idx]
@@ -171,17 +189,47 @@ class InstancePostprocessing(DensePostProcessingBase):
             # reshape to (1, h*w, 2)
             loc = loc.unsqueeze(0)
             # reshape to (n, 1, 2)
-            instance_center = instance_center.unsqueeze(1)
+            centers = centers.unsqueeze(1)
 
             # find the minimum distance for each pixel
-            distance = torch.norm(instance_center - loc, dim=-1)
+            distance = torch.norm(centers - loc, dim=-1)
 
             # determine instance id based on minimum distance and offset by 1
             # to avoid stuff id 0
-            instance_id = (torch.argmin(distance, dim=0) + 1).type(torch.uint8)
+            min_distances, instance_id = torch.min(distance, dim=0)
+            instance_id = (instance_id + 1).type(torch.uint8)
+
+            # optionally threshold minimum distances
+            # missing instance centers or an erroneous semantic segmentation
+            # (foreground) may lead to pixels being assigned to instance centers
+            # quite far away
+            # for application, it might be useful to mask such pixels out by
+            # assigning the no instance label (id=0)
+            # note that this masking leads to thing segments without an
+            # instance id, which have to be handled later on
+            if self._offset_distance_threshold is not None:
+                instance_id[min_distances > self._offset_distance_threshold] = 0
+                # print((instance_id == 0).sum())
+
             instance_view[foreground] = instance_id
 
-        return instance_centers, instace_segmentation
+            # fill meta dictionary
+            instance_areas = torch.bincount(instance_id,
+                                            minlength=len(centers)+1)
+            for i, center in enumerate(centers, start=1):    # 0 = no instance
+                center = center[0]   # remove added dimension
+                y = center[0].item()
+                x = center[1].item()
+                # note that the area and the center coordinates are derived
+                # from the raw prediction, the network output might be further
+                # umsampled later
+                instance_meta[idx][i] = {
+                    'center_yx': (y, x),
+                    'area': instance_areas[i].item(),
+                    'score': center_heatmap[idx, 0, y, x].item()
+                }
+
+        return instance_segmentation, instance_meta
 
     def _get_instance_orientation(
         self,
@@ -285,15 +333,17 @@ class InstancePostprocessing(DensePostProcessingBase):
         # i-1: using gt foreground mask (dataset evaluation)
         if 'instance_foreground' in batch:
             foreground_mask = batch['instance_foreground']
-            instance_predicted_centers, instance_segmentation = \
-                self._get_instance_segmentation(
-                    center_heatmap=center_heatmap,
-                    center_offset=center_offset_,
-                    foreground_mask=foreground_mask
-                )
+            segmentation, meta = self._get_instance_segmentation(
+                center_heatmap=center_heatmap,
+                center_offset=center_offset_,
+                foreground_mask=foreground_mask
+            )
             # used to visualize predicted centers
-            r_dict['instance_predicted_centers'] = instance_predicted_centers
-            r_dict['instance_segmentation_gt_foreground'] = instance_segmentation
+            r_dict['instance_segmentation_gt_foreground'] = segmentation
+            # note that the area and the center coordinates are derived
+            # from the raw prediction, the network output might be further
+            # umsampled later
+            r_dict['instance_segmentation_gt_meta'] = meta
 
             # resize to original shape (assume same shape for all samples)
             # note: we resize only the final prediction as resizing centers and
@@ -301,7 +351,7 @@ class InstancePostprocessing(DensePostProcessingBase):
             shape = get_fullres_shape(batch, 'instance')
             r_dict[get_fullres_key('instance_segmentation_gt_foreground')] = \
                 self._resize_prediction(
-                    instance_segmentation,
+                    segmentation,
                     shape=shape,
                     mode='nearest'
                 )
@@ -309,14 +359,12 @@ class InstancePostprocessing(DensePostProcessingBase):
         # i-2: considering everything as foreground (for debugging)
         if self.debug:
             foreground_mask = torch.ones_like(center_heatmap, dtype=torch.bool)
-            _, instance_segmentation_all_foreground = \
-                self._get_instance_segmentation(
-                    center_heatmap=center_heatmap,
-                    center_offset=center_offset_,
-                    foreground_mask=foreground_mask
-                )
-            r_dict['instance_segmentation_all_foreground'] = \
-                instance_segmentation_all_foreground
+            segmentation, _ = self._get_instance_segmentation(
+                center_heatmap=center_heatmap,
+                center_offset=center_offset_,
+                foreground_mask=foreground_mask
+            )
+            r_dict['instance_segmentation_all_foreground'] = segmentation
 
             # resize to original shape (assume same shape for all samples)
             # note: we resize only the final prediction as resizing centers and
@@ -324,7 +372,7 @@ class InstancePostprocessing(DensePostProcessingBase):
             shape = get_fullres_shape(batch, 'instance')
             r_dict[get_fullres_key('instance_segmentation_all_foreground')] = \
                 self._resize_prediction(
-                    instance_segmentation_all_foreground,
+                    segmentation,
                     shape=shape,
                     mode='nearest'
                 )

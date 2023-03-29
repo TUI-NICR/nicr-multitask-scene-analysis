@@ -6,7 +6,6 @@
 from typing import Any, Tuple, Union
 
 import numpy as np
-from scipy import stats
 
 from ...types import BatchType
 from ...utils import np_rad2biternion
@@ -61,8 +60,12 @@ class OrientationTargetGenerator:
             # note, we use mode of all relevant pixels as the pixels may have
             # different labels due to instance merging from 3d boxes
             if self._orientation_class_ids is not None:
-                semantic_class = stats.mode(sample['semantic'][mask],
-                                            axis=None)[0]
+                # As the bincount always starts with 0, the argmax will always
+                # return the class id of the most frequent class of the
+                # semantic labels.
+                semantic_class = np.bincount(
+                    sample['semantic'][mask].flatten()
+                ).argmax()
                 if semantic_class not in self._orientation_class_ids:
                     # we are not interested in this class
                     continue
