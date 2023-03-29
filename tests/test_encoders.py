@@ -10,6 +10,7 @@ import pytest
 import torch
 
 from nicr_mt_scene_analysis.model.backbone import get_backbone
+from nicr_mt_scene_analysis.model.backbone import IS_SWIN_AVAILABLE
 from nicr_mt_scene_analysis.model.encoder import get_encoder
 from nicr_mt_scene_analysis.testing.onnx import export_onnx_model
 from nicr_mt_scene_analysis.testing import EXPORT_ONNX_MODELS
@@ -238,6 +239,8 @@ def test_encoder_rgb_or_depth_backbone(modalities, backbone, tmp_path):
                   tmp_path=tmp_path)
 
 
+@pytest.mark.xfail(not IS_SWIN_AVAILABLE,
+                   reason="Torchvision version is too old")
 @pytest.mark.xfail(EXPORT_ONNX_MODELS, reason='ONNX export is not supported yet')
 @pytest.mark.parametrize('modalities', (('rgb',), ('depth',), ('rgb', 'depth')))
 @pytest.mark.parametrize('backbone', ('swin-t', 'swin-t-v2'))
@@ -253,6 +256,8 @@ def test_fused_encoder_swin(modalities, backbone, fusion, tmp_path):
                   tmp_path=tmp_path)
 
 
+@pytest.mark.xfail(not IS_SWIN_AVAILABLE,
+                   reason="Torchvision version is too old")
 @pytest.mark.xfail(EXPORT_ONNX_MODELS, reason='ONNX export is not supported yet')
 @pytest.mark.parametrize('backbones', (('swin-t', 'swin-t-v2'),))
 @pytest.mark.parametrize('fusion', ('add-uni-rgb', 'se-add-uni-rgb'))
@@ -267,6 +272,8 @@ def test_fused_encoder2_swin(backbones, fusion, tmp_path):
                   tmp_path=tmp_path)
 
 
+@pytest.mark.xfail(not IS_SWIN_AVAILABLE,
+                   reason="Torchvision version is too old")
 @pytest.mark.xfail(EXPORT_ONNX_MODELS, reason='ONNX export is not supported yet')
 @pytest.mark.parametrize('modalities', (('rgb',), ('depth',)))
 @pytest.mark.parametrize('backbone', ('swin-t', 'swin-t-v2'))
@@ -281,6 +288,8 @@ def test_encoder_rgb_or_depth_backbone_swin(modalities, backbone, tmp_path):
                   tmp_path=tmp_path)
 
 
+@pytest.mark.xfail(not IS_SWIN_AVAILABLE,
+                   reason="Torchvision version is too old")
 @pytest.mark.xfail(EXPORT_ONNX_MODELS, reason='ONNX export is not supported yet')
 @pytest.mark.parametrize('backbone', ('swin-multi-t',
                                       'swin-multi-t-v2',

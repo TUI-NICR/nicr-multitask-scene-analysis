@@ -9,6 +9,7 @@ import pytest
 import torch
 
 from nicr_mt_scene_analysis.model.backbone import get_backbone
+from nicr_mt_scene_analysis.model.backbone import IS_SWIN_AVAILABLE
 from nicr_mt_scene_analysis.model.backbone.pretraining import ImageNetClassifier
 from nicr_mt_scene_analysis.testing import EXPORT_ONNX_MODELS
 from nicr_mt_scene_analysis.testing.model import save_ckpt
@@ -172,6 +173,8 @@ def test_resnetse_nonbottleneck1d(name, n_input_channels, pretrained,
     export_onnx_model(filepath, model, x)
 
 
+@pytest.mark.xfail(not IS_SWIN_AVAILABLE,
+                   reason="Torchvision version is too old")
 @pytest.mark.parametrize('name', ('swin-t', 'swin-s', 'swin-b',
                                   'swin-t-v2', 'swin-s-v2', 'swin-b-v2'))
 @pytest.mark.parametrize('n_input_channels', (1, 3))
@@ -197,6 +200,8 @@ def test_swin(name, n_input_channels, pretrained, tmp_path):
     export_onnx_model(filepath, model, x)
 
 
+@pytest.mark.xfail(not IS_SWIN_AVAILABLE,
+                   reason="Torchvision version is too old")
 @pytest.mark.parametrize('name', ('swin-t-128', 'swin-t-v2-128'))
 @pytest.mark.parametrize('n_input_channels', (1, 3))
 @pytest.mark.parametrize('pretrained', (False, True))
@@ -235,6 +240,8 @@ def test_swin_128(name, n_input_channels, pretrained, tmp_path):
     export_onnx_model(filepath, model, x)
 
 
+@pytest.mark.xfail(not IS_SWIN_AVAILABLE,
+                   reason="Torchvision version is too old")
 @pytest.mark.parametrize('name', ('swin-multi-t', 'swin-multi-s',
                                   'swin-multi-b', 'swin-multi-t-v2',
                                   'swin-multi-s-v2', 'swin-multi-b-v2',
