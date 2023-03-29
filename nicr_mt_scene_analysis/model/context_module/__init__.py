@@ -17,13 +17,25 @@ from .ppm import PyramidPoolingModule
 from .none import NoContextModule
 
 
-KNOWN_CONTEXT_MODULES = [
-    'ppm',    # Pyramid Pooling Module with fixed bins of 1, 5 (640x480 inputs)
-    'ppm-1-2-4-8',    # Pyramid Pooling Module with bins 1, 2, 4, 8 (cityscapes)
-    'appm',    # same as ppm but number of bins is adapting to input resolution
-    'appm-1-2-4-8',    # same as ppm-1-2-4-8, but with adaption, see appm
-    'none'    # no context module
-]
+KNOWN_CONTEXT_MODULES = (
+    # pyramid pooling module:
+    # -> fixed output sizes (h=w)
+    # -> adaptive pooling window sizes, if input resolution changes
+    'ppm',    # default, same as ppm-1-5
+    'ppm-1-5',    # output sizes: 1, 5 (for 640x480 inputs)
+    'ppm-1-5-10',    # output sizes: 1, 5, 10 (for 1280x960 inputs)
+    'ppm-1-2-4-8',    # output sizes: 1, 2, 4, 8 (1024x512 inputs)
+    # adaptive pyramid pooling module:
+    # -> adaptive output sizes (h=w), if input resolution changes (e.g. during
+    #    validation on fullres images of Cityscapes)
+    # -> fixed pooling window sizes
+    'appm',    # same as ppm, but with adaption
+    'appm-1-5',    # same as ppm-1-5, but with adaption
+    'appm-1-5-10',    # same as ppm-1-5-10, but with adaption
+    'appm-1-2-4-8',    # same as ppm-1-2-4-8, but with adaption
+    # no context module at all
+    'none'
+)
 
 
 ContextModuleType = Union[PyramidPoolingModule,
@@ -48,12 +60,16 @@ def get_context_module(
     if 'appm' in name:
         if 'appm-1-2-4-8' == name:
             bins = (1, 2, 4, 8)
+        elif 'appm-1-5-10' == name:
+            bins = (1, 5, 10)
         else:
             bins = (1, 5)
         context_module_class = AdaptivePyramidPoolingModule
     elif 'ppm' in name:
         if 'ppm-1-2-4-8' == name:
             bins = (1, 2, 4, 8)
+        elif 'ppm-1-5-10' == name:
+            bins = (1, 5, 10)
         else:
             bins = (1, 5)
         context_module_class = PyramidPoolingModule

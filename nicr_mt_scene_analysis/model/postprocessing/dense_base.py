@@ -11,7 +11,7 @@ import torch.nn.functional as F
 from .base import PostprocessingBase
 
 
-class DensePostProcessingBase(PostprocessingBase):
+class DensePostprocessingBase(PostprocessingBase):
     def _resize_prediction(
         self,
         prediction: torch.Tensor,

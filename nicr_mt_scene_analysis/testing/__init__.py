@@ -6,7 +6,8 @@
 import os
 
 # export onnx models
-EXPORT_ONNX_MODELS = os.environ.get('EXPORT_ONNX_MODELS') is not None
+EXPORT_ONNX_MODELS = os.environ.get('EXPORT_ONNX_MODELS',
+                                    default=None) is not None
 
 # show results using matplotlib
-SHOW_RESULTS = os.environ.get('SHOW_RESULTS') is not None
+SHOW_RESULTS = os.environ.get('SHOW_RESULTS', default=None) is not None

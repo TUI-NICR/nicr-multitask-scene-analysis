@@ -12,8 +12,11 @@ import torch
 from nicr_mt_scene_analysis.model.activation import get_activation_class
 from nicr_mt_scene_analysis.model.block import get_block_class
 from nicr_mt_scene_analysis.model.decoder import SemanticDecoder
+from nicr_mt_scene_analysis.model.decoder import SemanticMLPDecoder
 from nicr_mt_scene_analysis.model.decoder import InstanceDecoder
+from nicr_mt_scene_analysis.model.decoder import InstanceMLPDecoder
 from nicr_mt_scene_analysis.model.decoder import NormalDecoder
+from nicr_mt_scene_analysis.model.decoder import NormalMLPDecoder
 from nicr_mt_scene_analysis.model.decoder import PanopticHelper
 from nicr_mt_scene_analysis.model.decoder import SceneClassificationDecoder
 from nicr_mt_scene_analysis.model.encoder_decoder_fusion import get_encoder_decoder_fusion_class
@@ -23,36 +26,75 @@ from nicr_mt_scene_analysis.model.upsampling import get_upsampling_class
 from nicr_mt_scene_analysis.testing.onnx import export_onnx_model
 
 
-def decoders_test(tasks, panoptic_enabled, do_postprocessing, training, debug,
+def decoders_test(tasks,
+                  use_swin_encoder,
+                  downsampling_in,
+                  use_mlp_decoder,
+                  panoptic_enabled,
+                  do_postprocessing,
+                  training,
+                  debug,
                   tmp_path):
+
+    input_h, input_w = (480, 640)
+
     # set fixed seed (cherry-picked seed)
     # necessary to ensure passing instance tests with random input and weights
     torch.manual_seed(0)
 
-    # common parameters used in almost all decoders
-    common_kwargs = {
-        'n_channels_in': 512,
-        'n_channels': (512, 256, 128),
-        'downsampling_in': 32,
-        'fusion': get_encoder_decoder_fusion_class('add-rgb'),
-        'fusion_n_channels': (256, 128, 64),
-        'normalization': get_normalization_class('batchnorm'),
-        'activation': get_activation_class('relu'),
-        'upsampling': get_upsampling_class('learned-3x3-zeropad'),
-        'prediction_upsampling': get_upsampling_class('learned-3x3-zeropad'),
-        'block': get_block_class('nonbottleneck1d'),
-        'n_blocks': 1,
-    }
+    # determine encoder decoder fusion class
+    fusion_name = 'swin-ln-' if use_swin_encoder else ''
+    fusion_name += 'select-rgb' if use_mlp_decoder else 'add-rgb'
+
+    # determine parameters depending on decoder type
+    if use_mlp_decoder:
+        # common parameters used in almost all decoders
+        common_kwargs = {
+            'n_channels_in': 512,
+            'n_channels': (256, 128, 64, 64),
+            'downsampling_in': downsampling_in,
+            'fusion': get_encoder_decoder_fusion_class(fusion_name),
+            'fusion_n_channels': (256, 128, 64),
+            'fusion_downsamplings': (16, 8, 4),
+            'downsampling_in_heads': 4,
+            'normalization': get_normalization_class('batchnorm'),
+            'activation': get_activation_class('relu'),
+            'upsampling': get_upsampling_class('bilinear'),
+            'prediction_upsampling': get_upsampling_class('learned-3x3-zeropad'),
+        }
+        SemanticDecoderClass = SemanticMLPDecoder
+        InstanceDecoderClass = InstanceMLPDecoder
+        NormalDecoderClass = NormalMLPDecoder
+    else:
+        # common parameters used in almost all decoders
+        common_kwargs = {
+            'n_channels_in': 512,
+            'n_channels': (512, 256, 128),
+            'downsampling_in': downsampling_in,
+            'downsamplings': (16, 8, 4),
+            'fusion': get_encoder_decoder_fusion_class(fusion_name),
+            'fusion_n_channels': (256, 128, 64),
+            'fusion_downsamplings': (16, 8, 4),
+            'normalization': get_normalization_class('batchnorm'),
+            'activation': get_activation_class('relu'),
+            'upsampling': get_upsampling_class('learned-3x3-zeropad'),
+            'prediction_upsampling': get_upsampling_class('learned-3x3-zeropad'),
+            'block': get_block_class('nonbottleneck1d'),
+            'n_blocks': 1,
+        }
+        SemanticDecoderClass = SemanticDecoder
+        InstanceDecoderClass = InstanceDecoder
+        NormalDecoderClass = NormalDecoder
 
     if 'semantic' in tasks:
-        semantic_decoder = SemanticDecoder(
+        semantic_decoder = SemanticDecoderClass(
             n_classes=40,
             postprocessing=get_postprocessing_class('semantic', debug=debug),
             **common_kwargs
         )
         decoder = semantic_decoder
     if 'instance' in tasks:
-        instance_decoder = InstanceDecoder(
+        instance_decoder = InstanceDecoderClass(
             n_channels_per_task=32,
             with_orientation=('orientation' in tasks),
             postprocessing=get_postprocessing_class(
@@ -76,12 +118,13 @@ def decoders_test(tasks, panoptic_enabled, do_postprocessing, training, debug,
                 instance_postprocessing=instance_decoder.postprocessing,
                 semantic_classes_is_thing=(True, )*40,
                 semantic_class_has_orientation=(True, )*40,
+                compute_scores=True,
                 debug=debug
             )
         )
 
     if 'normal' in tasks:
-        decoder = NormalDecoder(
+        decoder = NormalDecoderClass(
             n_channels_out=3,
             postprocessing=get_postprocessing_class('normal', debug=debug),
             **common_kwargs
@@ -97,33 +140,50 @@ def decoders_test(tasks, panoptic_enabled, do_postprocessing, training, debug,
 
     # set up inputs for decoders
     x = (
-        torch.rand(3, 512, 20, 15),    # output of context module
-        (torch.rand(3, 512//2, 1, 1),)     # at least one context branch (from GAP)
+        # output of context module
+        torch.rand(3, 512, input_h//downsampling_in, input_w//downsampling_in),
+        # at least one context branch (from GAP)
+        (torch.rand(3, 512//2, 1, 1),)
     )
-    skips_reversed = (
-        (torch.rand(3, 256, 40, 30), None),     # downsample: 16
-        (torch.rand(3, 128, 80, 60), None),    # downsample: 8
-        (torch.rand(3, 64, 160, 120), None),    # downsample: 4
-    )
+    if use_swin_encoder:
+        # NHWC skip connections
+        # strings are used to prevent casting keys from int to tensor(int)
+        # while exporting to ONNX
+        skips = {
+            '16': {'rgb': torch.rand(3, input_h//16, input_w//16, 256)},
+            '8': {'rgb': torch.rand(3, input_h//8, input_w//8, 128)},
+            '4': {'rgb': torch.rand(3, input_h//4, input_w//4, 64)},
+        }
+    else:
+        # NCHW skip connections
+        # strings are used to prevent casting keys from int to tensor(int)
+        # while exporting to ONNX
+        skips = {
+            '16': {'rgb': torch.rand(3, 256, input_h//16, input_w//16)},
+            '8': {'rgb': torch.rand(3, 128, input_h//8, input_w//8)},
+            '4': {'rgb': torch.rand(3, 64, input_h//4, input_w//4)},
+        }
+
     batch = {}
     if 'instance' in tasks:
         # pure instance segmentation task requires gt foreground mask
-        batch['instance_foreground'] = torch.ones((3, 480, 640),
+        batch['instance_foreground'] = torch.ones((3, input_h, input_w),
                                                   dtype=torch.bool)
     if 'orientation' in tasks:
         # orientation estimation requires a gt segmentation and foreground mask
         batch['instance'] = torch.ones((3, 480, 640), dtype=torch.bool)
-        batch['orientation_foreground'] = torch.ones((3, 480, 640),
+        batch['orientation_foreground'] = torch.ones((3, input_h, input_w),
                                                      dtype=torch.bool)
 
     # we need at least one fullres key in the batch for shape deriving in
     # inference (validation) postprocessing
-    batch['rgb_fullres'] = torch.ones((3, 3, 480, 640), dtype=torch.uint8)
+    batch['rgb_fullres'] = torch.ones((3, 3, input_h, input_w),
+                                      dtype=torch.uint8)
 
     if not training:
         decoder.eval()
 
-    output = decoder(x, skips_reversed, batch,
+    output = decoder(x, skips, batch,
                      do_postprocessing=do_postprocessing)
 
     if not do_postprocessing:
@@ -138,8 +198,11 @@ def decoders_test(tasks, panoptic_enabled, do_postprocessing, training, debug,
         if 'semantic' in tasks or panoptic_enabled:
             keys += ['semantic_output', 'semantic_side_outputs']
             if not training:
-                keys += ['semantic_segmentation_score',
+                keys += ['semantic_softmax_scores',
+                         'semantic_segmentation_score',
                          'semantic_segmentation_idx',
+                         'semantic_output_fullres',
+                         'semantic_softmax_scores_fullres',
                          'semantic_segmentation_score_fullres',
                          'semantic_segmentation_idx_fullres']
 
@@ -148,8 +211,8 @@ def decoders_test(tasks, panoptic_enabled, do_postprocessing, training, debug,
             if not training:
                 keys += ['instance_centers',
                          'instance_offsets',
-                         'instance_predicted_centers',
                          'instance_segmentation_gt_foreground',
+                         'instance_segmentation_gt_meta',
                          'instance_segmentation_gt_foreground_fullres']
                 if debug:
                     keys += ['instance_segmentation_all_foreground',
@@ -158,17 +221,22 @@ def decoders_test(tasks, panoptic_enabled, do_postprocessing, training, debug,
         if panoptic_enabled:
             if not training:
                 keys += ['panoptic_foreground_mask',
-                         'panoptic_foreground_mask_fullres',
-                         'panoptic_instance_predicted_centers',
-                         'panoptic_instance_segmentation',
-                         'panoptic_instance_segmentation_fullres',
                          'panoptic_segmentation_deeplab',
                          'panoptic_segmentation_deeplab_fullres',
                          'panoptic_segmentation_deeplab_ids',
-                         'panoptic_segmentation_deeplab_semantic_segmentation',
-                         'panoptic_segmentation_deeplab_instance_segmentation']
+                         'panoptic_segmentation_deeplab_semantic_idx',
+                         'panoptic_segmentation_deeplab_semantic_idx_fullres',
+                         'panoptic_segmentation_deeplab_semantic_score',
+                         'panoptic_segmentation_deeplab_semantic_score_fullres',
+                         'panoptic_segmentation_deeplab_instance_idx',
+                         'panoptic_segmentation_deeplab_instance_idx_fullres',
+                         'panoptic_segmentation_deeplab_instance_meta',
+                         'panoptic_segmentation_deeplab_instance_score',
+                         'panoptic_segmentation_deeplab_instance_score_fullres',
+                         'panoptic_segmentation_deeplab_panoptic_score',
+                         'panoptic_segmentation_deeplab_panoptic_score_fullres']
                 if 'orientation' in tasks:
-                    keys += ['orientations_panoptic_segmentation_deeplab_instance_segmentation']
+                    keys += ['orientations_panoptic_segmentation_deeplab_instance']
 
         if 'orientation' in tasks:
             if not training:
@@ -199,12 +267,15 @@ def decoders_test(tasks, panoptic_enabled, do_postprocessing, training, debug,
     if panoptic_enabled:
         tasks_str += '+panoptic'
     filename = f'decoders_{tasks_str}'
+    filename += f'__downsampling_{downsampling_in}'
+    filename += f'__mlp_{use_mlp_decoder}'
+    filename += f'__swin_{use_swin_encoder}'
     filename += f'__train_{training}'
     filename += f'__post_{do_postprocessing}'
     filename += '.onnx'
     filepath = os.path.join(tmp_path, filename)
     # export
-    x = (x, skips_reversed, batch, {'do_postprocessing': do_postprocessing})
+    x = (x, skips, batch, {'do_postprocessing': do_postprocessing})
     export_onnx_model(filepath, decoder, x)
 
 
@@ -213,14 +284,19 @@ def decoders_test(tasks, panoptic_enabled, do_postprocessing, training, debug,
                                   ('instance', 'orientation'),
                                   'normal',
                                   'scene'))
+@pytest.mark.parametrize('use_swin_encoder', (False, True))
+@pytest.mark.parametrize('downsampling_in', (32, 16))
 @pytest.mark.parametrize('do_postprocessing', (False, True))
 @pytest.mark.parametrize('training', (False, True))
 @pytest.mark.parametrize('debug', (False, True))
-def test_decoders_single_decoder(task, do_postprocessing, training, debug,
-                                 tmp_path):
-    """Test in single decoder setup"""
+def test_decoders_single_decoder(task, use_swin_encoder, downsampling_in,
+                                 do_postprocessing, training, debug, tmp_path):
+    """Test in single EMSANet decoder setup"""
     tasks = task if isinstance(task, tuple) else (task,)
     decoders_test(tasks=tasks,
+                  use_swin_encoder=use_swin_encoder,
+                  downsampling_in=downsampling_in,
+                  use_mlp_decoder=False,
                   panoptic_enabled=False,
                   do_postprocessing=do_postprocessing,
                   training=training,
@@ -228,15 +304,42 @@ def test_decoders_single_decoder(task, do_postprocessing, training, debug,
                   tmp_path=tmp_path)
 
 
+@pytest.mark.parametrize('task', ('semantic',
+                                  'instance',
+                                  ('instance', 'orientation'),
+                                  'normal'))
+@pytest.mark.parametrize('use_swin_encoder', (False, True))
+@pytest.mark.parametrize('downsampling_in', (32, 16))
+@pytest.mark.parametrize('training', (False, True))
+@pytest.mark.parametrize('debug', (False, True))
+def test_decoders_single_mlp_decoder(task, use_swin_encoder, downsampling_in,
+                                     training, debug, tmp_path):
+    """Test in single MLP decoder setup"""
+    tasks = task if isinstance(task, tuple) else (task,)
+    decoders_test(tasks=tasks,
+                  use_swin_encoder=use_swin_encoder,
+                  downsampling_in=downsampling_in,
+                  use_mlp_decoder=True,
+                  panoptic_enabled=False,
+                  do_postprocessing=False,   # tested above
+                  training=training,
+                  debug=debug,
+                  tmp_path=tmp_path)
+
+
 @pytest.mark.parametrize('tasks', (('semantic', 'instance'),
                                    ('semantic', 'instance', 'orientation')))
+@pytest.mark.parametrize('downsampling_in', (32, 16))
 @pytest.mark.parametrize('do_postprocessing', (False, True))
 @pytest.mark.parametrize('training', (False, True))
 @pytest.mark.parametrize('debug', (False, True))
-def test_decoders_panoptic(tasks, do_postprocessing, training, debug,
-                           tmp_path):
+def test_decoders_panoptic(tasks, downsampling_in, do_postprocessing,
+                           training, debug, tmp_path):
     """Test in panoptic segmentation setting"""
     decoders_test(tasks=tasks,
+                  use_swin_encoder=False,
+                  downsampling_in=downsampling_in,
+                  use_mlp_decoder=False,
                   panoptic_enabled=True,
                   do_postprocessing=do_postprocessing,
                   training=training,

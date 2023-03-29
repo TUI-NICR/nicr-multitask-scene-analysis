@@ -10,11 +10,11 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from ..utils import ConvNormAct
-from ..activation import get_activation_class
-from ..normalization import get_normalization_class
 from ...types import ContextModuleInputType
 from ...types import ContextModuleOutputType
+from ..activation import get_activation_class
+from ..normalization import get_normalization_class
+from ..utils import ConvNormAct
 
 
 class AdaptivePyramidPoolingModule(nn.Module):
@@ -37,12 +37,13 @@ class AdaptivePyramidPoolingModule(nn.Module):
 
         features = []
         for _ in bins:
-            features.append(
+            features.append(nn.Sequential(
+                nn.Identity(),    # to make ppm and appm interchangeable
                 ConvNormAct(n_channels_in, n_channels_reduction,
                             kernel_size=1,
                             normalization=normalization,
                             activation=activation)
-            )
+            ))
         self.features = nn.ModuleList(features)
 
         n_channels_in_last_conv = n_channels_in + n_channels_reduction*len(bins)
@@ -53,9 +54,10 @@ class AdaptivePyramidPoolingModule(nn.Module):
         self.n_channels_reduction = n_channels_reduction
 
     def forward(self, x: ContextModuleInputType) -> ContextModuleOutputType:
-        x_size = x.size()
-        h, w = x_size[2:]
+        h, w = x.shape[2:]
         h_inp, w_inp = self._input_size
+
+        # adapt bins to current size of x
         bin_multiplier_h = int((h / h_inp) + 0.5)
         bin_multiplier_w = int((w / w_inp) + 0.5)
 

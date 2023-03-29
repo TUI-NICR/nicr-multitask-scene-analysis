@@ -3,8 +3,9 @@
 .. codeauthor:: Mona Koehler <mona.koehler@tu-ilmenau.de>
 .. codeauthor:: Daniel Seichter <daniel.seichter@tu-ilmenau.de>
 """
-from typing import Any, Optional, Tuple, Type
+from typing import Any, Callable, Optional, Tuple, Type
 
+from torch import Tensor
 import torch.nn as nn
 
 from ..utils import partial_class
@@ -21,35 +22,63 @@ KNOWN_ENCODER_FUSIONS = (
 )
 
 
-class EncoderFusionWeightedAdd(nn.Module):
+def _apply_NCHW_operation(
+    x: Tensor,
+    operation: Callable[[Tensor], Tensor],
+    input_memory_layout: str
+) -> Tensor:
+    if 'nchw' == input_memory_layout:
+        return operation(x)
+    elif 'nhwc' == input_memory_layout:
+        # it is channels last
+        return operation(x.permute(0, 3, 1, 2)).permute(0, 2, 3, 1)
+    else:
+        raise ValueError(f'Unknown input_memory_layout: {input_memory_layout}')
+
+
+class EncoderRGBDFusionWeightedAdd(nn.Module):
     def __init__(
         self,
         n_channels_in: int,
         destinations: Tuple[str, ...],
         use_se_weighting: bool,
+        input_memory_layout: str,
         activation: Type[nn.Module] = get_activation_class(),
         **kwargs
     ) -> None:
         super().__init__()
+
         if use_se_weighting:
             # weight features using SqueezeAndExcitation before
             self.weighting_rgb = SqueezeAndExcitation(n_channels_in,
                                                       activation=activation)
             self.weighting_depth = SqueezeAndExcitation(n_channels_in,
                                                         activation=activation)
-        else:
-            # do not weight features
-            self.weighting_rgb = nn.Identity()
-            self.weighting_depth = nn.Identity()
 
+        self._n_channels_in = n_channels_in
+        self._use_se_weighting = use_se_weighting
         self._destinations = destinations
+        self._input_memory_layout = input_memory_layout
 
     def forward(self, x: EncoderForwardType) -> EncoderForwardType:
-        x_rgb, x_depth = x
+        # unpack input
+        x_rgb, x_depth = x['rgb'], x['depth']
 
         # apply optional weighting
-        rgb_weighted = self.weighting_rgb(x_rgb)
-        depth_weighted = self.weighting_depth(x_depth)
+        if self._use_se_weighting:
+            rgb_weighted = _apply_NCHW_operation(
+                x_rgb,
+                self.weighting_rgb,
+                self._input_memory_layout
+            )
+            depth_weighted = _apply_NCHW_operation(
+                x_depth,
+                self.weighting_depth,
+                self._input_memory_layout
+            )
+        else:
+            rgb_weighted = x_rgb
+            depth_weighted = x_depth
 
         # fuse features
         fused = rgb_weighted + depth_weighted
@@ -58,10 +87,10 @@ class EncoderFusionWeightedAdd(nn.Module):
         y_rgb = fused if 'rgb' in self._destinations else x_rgb
         y_depth = fused if 'depth' in self._destinations else x_depth
 
-        return y_rgb, y_depth
+        return {'rgb': y_rgb, 'depth': y_depth}
 
 
-EncoderFusionType = EncoderFusionWeightedAdd
+EncoderFusionType = EncoderRGBDFusionWeightedAdd
 
 
 def get_encoder_fusion_class(
@@ -87,4 +116,4 @@ def get_encoder_fusion_class(
     else:
         kwargs['destinations'] = ('rgb', 'depth',)
 
-    return partial_class(EncoderFusionWeightedAdd, **kwargs)
+    return partial_class(EncoderRGBDFusionWeightedAdd, **kwargs)

@@ -3,9 +3,10 @@
 .. codeauthor:: Soehnke Fischedick <soehnke-benedikt.fischedick@tu-ilmenau.de>
 .. codeauthor:: Daniel Seichter <daniel.seichter@tu-ilmenau.de>
 """
-from typing import Dict, Optional, Tuple, Union
+from typing import Dict, Optional, Sequence, Tuple, Union
 
 import os
+import warnings
 
 import cv2
 import numpy as np
@@ -18,31 +19,47 @@ from ..utils import np_biternion2deg
 from ._pil import to_pil_img
 
 
-class ColorMapper:
-    def __init__(self):
-        # TODO: nicer colormap that really has more than 256 colors
-        # hacky way to have more than 256 colors
-        default_cmap = self._get_simple_colormap(256) * 4
-        self.default_cmap = np.array(default_cmap, dtype='uint8')
+class InstanceColorGenerator:
+    def __init__(
+        self,
+        cmap_without_void: Optional[Union[Sequence[Tuple[int, int, int]],
+                                          np.ndarray]] = None,
+    ) -> None:
+        if cmap_without_void is None:
+            # TODO: nicer colormap that really has more than 256 colors
+            # hacky way to have more than 256 colors
+            cmap_without_void = self._get_simple_colormap(256)
+
+        self.base_cmap = np.array(cmap_without_void, dtype='uint8')
+
         self.id_to_color = {0: (0, 0, 0)}
+
         # index 0 defaults to black color, as it is typically void
         self.colormap_np = np.array([[0, 0, 0]], dtype='uint8')
 
     def __call__(self, id_):
-        # build colormap_np
+        # update continuous colormap_np
         if id_ >= self.colormap_np.shape[0]:
             # add some rows with black color as default
             n_additional_rows = id_ - self.colormap_np.shape[0] + 1
-            additional_rows = np.array([(0, 0, 0)] * n_additional_rows, dtype='uint8')
+            additional_rows = np.array([(0, 0, 0)] * n_additional_rows,
+                                       dtype='uint8')
             self.colormap_np = np.vstack((self.colormap_np, additional_rows))
 
-        # build dictionary
+        # update dictionary
         if id_ not in self.id_to_color:
-            # take the next color of the default_cmap
-            color = self.default_cmap[len(self.id_to_color)]
+            # get index for next color
+            next_idx = len(self.id_to_color)
+            if next_idx >= self.base_cmap.shape[0]:
+                warnings.warn(f'Colormap limit reached, reusing colors.')
+                next_idx = next_idx % self.base_cmap.shape[0]
+
+            # take the next color
+            color = self.base_cmap[next_idx]
+
             # set current color
             self.colormap_np[id_] = color
-            self.id_to_color[id_] = tuple(int(c) for c in color)
+            self.id_to_color[id_] = tuple(int(c) for c in color)    # hashable
 
         return self.id_to_color[id_]
 
@@ -74,29 +91,35 @@ class ColorMapper:
         return tuple(cmap)
 
 
-_INSTANCE_COLOR_MAPPER = ColorMapper()
-
-
 def visualize_instance_center(
-    center_img: np.array,
+    center_img: Optional[np.ndarray] = None,
+    centers: Optional[Tuple[Tuple[int, int]]] = None,
+    height: Optional[int] = None,
+    width: Optional[int] = None,
     min_: Optional[int] = None,
     max_: Optional[int] = None,
-) -> np.array:
-    assert center_img.ndim == 2
+) -> np.ndarray:
+    assert center_img is not None or centers is not None
+    assert center_img is None or center_img.ndim == 2
 
-    if np.issubdtype(center_img.dtype, np.floating):
-        # instance center given as heatmap
-        # default (gt) range for instance centers is [0, 1]
-        min_ = min_ or 0
-        max_ = max_ or 1
+    if center_img is not None:
+        if np.issubdtype(center_img.dtype, np.floating):
+            # instance center given as heatmap
+            # default (gt) range for instance centers is [0, 1]
+            min_ = min_ or 0
+            max_ = max_ or 1
 
-        center_img_01 = (center_img - min_) / (max_ - min_)
+            center_img_01 = (center_img - min_) / (max_ - min_)
 
-        return np.clip(center_img_01*255, 0, 255).astype('uint8')
+            return np.clip(center_img_01*255, 0, 255).astype('uint8')
 
-    # instance center given as mask
-    img = np.zeros_like(center_img, dtype='uint8')
-    for y, x in zip(*center_img.nonzero()):
+        # instance center given as mask, convert to tuple of coordinates
+        centers = tuple(zip(*center_img.nonzero()))
+        height, width = center_img.shape
+
+    # instance center given as mask or tuple of coordinates
+    img = np.zeros((height, width), dtype='uint8')
+    for y, x in centers:
         img = cv2.drawMarker(img, position=(x, y), color=255,
                              markerType=cv2.MARKER_TILTED_CROSS,
                              thickness=2, markerSize=15)
@@ -104,18 +127,25 @@ def visualize_instance_center(
 
 
 def visualize_instance_center_pil(
-    center_img: np.array,
+    center_img: Optional[np.ndarray] = None,
+    centers: Optional[Tuple[Tuple[int, int]]] = None,
+    height: Optional[int] = None,
+    width: Optional[int] = None,
     min_: Optional[int] = None,
     max_: Optional[int] = None,
 ) -> Image.Image:
     return to_pil_img(
-        visualize_instance_center(center_img, min_, max_),
+        visualize_instance_center(
+            center_img, centers, height, width, min_, max_
+        ),
         palette=None
     )
 
 
-def visualize_instance_offset(offset_img: np.array,
-                              foreground_mask: Union[None, np.array] = None) -> np.array:
+def visualize_instance_offset(
+    offset_img: np.ndarray,
+    foreground_mask: Union[None, np.ndarray] = None
+) -> np.ndarray:
     assert offset_img.ndim == 3
     assert offset_img.shape[-1] == 2
 
@@ -127,8 +157,8 @@ def visualize_instance_offset(offset_img: np.array,
     dy_img = np.array(offset_img[..., 0], dtype='float32')
     dx_img = np.array(offset_img[..., 1], dtype='float32')
     norm = np.sqrt(dx_img**2 + dy_img**2)
-    dy_img = np.divide(dy_img, norm, where=(norm != 0))
-    dx_img = np.divide(dx_img, norm, where=(norm != 0))
+    np.divide(dy_img, norm, where=(norm != 0), out=dy_img)    # requires out !!!
+    np.divide(dx_img, norm, where=(norm != 0), out=dx_img)    # requires out !!!
     max_abs = norm.max()
     vec_ang = (np.rad2deg(np.arctan2(-dy_img, dx_img)) + 180)/2
     vec_ang = (vec_ang - 90/2) % (360/2)
@@ -143,38 +173,58 @@ def visualize_instance_offset(offset_img: np.array,
     return rgb_img
 
 
-def visualize_instance_offset_pil(offset_img: np.array,
-                                  foreground_mask: Union[None, np.array] = None) -> Image.Image:
+def visualize_instance_offset_pil(
+    offset_img: np.ndarray,
+    foreground_mask: Union[None, np.ndarray] = None
+) -> Image.Image:
     return to_pil_img(visualize_instance_offset(offset_img, foreground_mask),
                       palette=None)
 
 
-def visualize_instance(instance_img: np.array) -> np.array:
+def visualize_instance(
+    instance_img: np.ndarray,
+    shared_color_generator: Optional[InstanceColorGenerator] = None
+) -> np.ndarray:
     assert instance_img.ndim == 2
 
-    return _INSTANCE_COLOR_MAPPER.get_colored_image(instance_img)
+    if shared_color_generator is None:
+        shared_color_generator = InstanceColorGenerator()
+
+    return shared_color_generator.get_colored_image(instance_img)
 
 
-def visualize_instance_pil(instance_img: np.array) -> Image.Image:
+def visualize_instance_pil(
+    instance_img: np.ndarray,
+    shared_color_generator: Optional[InstanceColorGenerator] = None
+) -> Image.Image:
     assert instance_img.ndim == 2
 
-    _INSTANCE_COLOR_MAPPER.add_colors_for_all_ids_in_image(instance_img)
+    if shared_color_generator is None:
+        shared_color_generator = InstanceColorGenerator()
 
-    return to_pil_img(instance_img, palette=_INSTANCE_COLOR_MAPPER.colormap_np)
+    shared_color_generator.add_colors_for_all_ids_in_image(instance_img)
+
+    return to_pil_img(instance_img,
+                      palette=shared_color_generator.colormap_np)
 
 
 def visualize_instance_orientations(
-    instance_img: np.array,
+    instance_img: np.ndarray,
     orientations: Dict[int, float],
+    shared_color_generator: Optional[InstanceColorGenerator] = None,
     thickness: int = 2,
     font_size: int = 30,
     bg_color: int = 0,
     bg_color_font: str = 'black',
     draw_outline: bool = True
-) -> np.array:
+) -> np.ndarray:
     assert instance_img.ndim == 2
 
-    orientation_img = np.zeros(instance_img.shape+(3,), dtype='uint8') + bg_color
+    if shared_color_generator is None:
+        shared_color_generator = InstanceColorGenerator()
+
+    orientation_img = np.zeros(instance_img.shape+(3,),
+                               dtype='uint8') + bg_color
 
     font_fp = os.path.join(os.path.dirname(__file__), 'FreeMonoBold.ttf')
     font = ImageFont.truetype(font_fp, font_size)
@@ -197,10 +247,12 @@ def visualize_instance_orientations(
                                            method=cv2.CHAIN_APPROX_SIMPLE)
 
             # draw instance contour
-            color = _INSTANCE_COLOR_MAPPER(instance_id)
-            orientation_img = cv2.drawContours(orientation_img,
-                                               contours=contours, contourIdx=-1,
-                                               color=color, thickness=thickness)
+            color = shared_color_generator(instance_id)
+            orientation_img = cv2.drawContours(
+                orientation_img,
+                contours=contours, contourIdx=-1,
+                color=color, thickness=thickness
+            )
         else:
             color = (255, 255, 255)
 
@@ -221,24 +273,30 @@ def visualize_instance_orientations(
 
 
 def visualize_instance_orientations_pil(
-    instance_img: np.array,
+    instance_img: np.ndarray,
     orientations: Dict[int, float],
+    shared_color_generator: Optional[InstanceColorGenerator] = None,
     thickness: int = 2,
     font_size: int = 30,
     bg_color: int = 0,
     bg_color_font: str = 'black',
     draw_outline: bool = True
 ) -> Image.Image:
-    return to_pil_img(visualize_instance_orientations(instance_img,
-                                                      orientations,
-                                                      thickness,
-                                                      font_size,
-                                                      bg_color,
-                                                      bg_color_font,
-                                                      draw_outline))
+    return to_pil_img(
+        visualize_instance_orientations(
+            instance_img=instance_img,
+            orientations=orientations,
+            shared_color_generator=shared_color_generator,
+            thickness=thickness,
+            font_size=font_size,
+            bg_color=bg_color,
+            bg_color_font=bg_color_font,
+            draw_outline=draw_outline
+        )
+    )
 
 
-def visualize_orientation(orientation_img: np.array) -> np.array:
+def visualize_orientation(orientation_img: np.ndarray) -> np.ndarray:
     assert orientation_img.ndim == 3
     assert orientation_img.shape[-1] == 2
 
@@ -259,5 +317,5 @@ def visualize_orientation(orientation_img: np.array) -> np.array:
     return cv2.cvtColor(orientation_img_hsv, cv2.COLOR_HSV2RGB)
 
 
-def visualize_orientation_pil(orientation_img: np.array) -> Image.Image:
+def visualize_orientation_pil(orientation_img: np.ndarray) -> Image.Image:
     return to_pil_img(visualize_orientation(orientation_img))

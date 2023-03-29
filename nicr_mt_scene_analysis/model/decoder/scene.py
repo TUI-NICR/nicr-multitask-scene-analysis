@@ -39,13 +39,24 @@ class SceneClassificationDecoder(DecoderBase):
         # if there is no context module, the output of the (dummy) context
         # module (with adapted number of channels) is global average pooled
         cm_output, cm_context_features = x
+
         if cm_context_features:
             # use the global average pooling branch
             x = cm_context_features[0]
-            assert x.shape[-2:] == (1, 1)
+
+            if x.shape[-2:] != (1, 1):
+                # when training with appm context module and processing larger
+                # inputs during validation x might be larger than (1, 1)
+                # we apply another avg. pooling to make sure that x is (1, 1)
+                # note that this chained avg pooling is mathematically
+                # equivalent to performing a single global avg. pooling
+                x = F.adaptive_avg_pool2d(x, 1)
         else:
             # apply global average pooling to the output
-            x = F.adaptive_avg_pool2d(x, cm_output)
+            # use fallback if there is no context module, note that this may
+            # change the number of channels compared to training with context
+            # module
+            x = F.adaptive_avg_pool2d(cm_output, 1)
 
         # apply fully-connected layer
         x = torch.flatten(x, 1)

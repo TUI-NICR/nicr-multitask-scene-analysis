@@ -31,6 +31,8 @@ def abs_angle_error_rad(
 
 
 class MeanAbsoluteAngularError(Metric):
+    full_state_update = False
+
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
@@ -63,6 +65,8 @@ class MeanAbsoluteAngularError(Metric):
 
 
 class PanopticQualityWithOrientationMAE(PanopticQuality):
+    full_state_update = False
+
     def __init__(self, *args, **kwargs):
         """
         Computes Panoptic Quality and Mean Absolute Angular Error for matched

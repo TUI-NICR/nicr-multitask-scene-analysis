@@ -8,12 +8,12 @@ The code is mostly based on the following implementation:
 This PQ implementation has several advantages over the original one of the
 panopticapi package (see: https://github.com/cocodataset/panopticapi)
 Advantages:
-- do not use buggy mulitprocessing code
+- do not use buggy multiprocessing code
   --> see: (https://github.com/cocodataset/panopticapi/issues/27)
 - Work on torch.Tensor instead of PIL images
 - do not require file writes
 - directly work on a semantic and instance segmentation instead of
-  a combined panoptic segmentaton
+  a combined panoptic segmentation
 - implemented as a torchmetrics metric
 """
 from typing import Dict, List, Union, Tuple
@@ -92,24 +92,24 @@ def compare_and_accumulate(
         if current_label == ignored_label:
             ignored_segment_ids.add(target_segment_id)
 
-    # Next, combine the groundtruth and predicted labels. Dividing up
-    # the pixels based on which groundtruth segment and which predicted
+    # Next, combine the ground-truth and predicted labels. Dividing up
+    # the pixels based on which ground-truth segment and which predicted
     # segment they belong to, this will assign a different 32-bit integer
-    # label to each choice of (groundtruth segment, predicted segment),
+    # label to each choice of (ground-truth segment, predicted segment),
     # encoded as
     #   target * offset + pred.
-    # TODO: Usually that should be a uint64 or int128 which both don't
-    # exists in pytorch. Currently there is no guarantee that this dosn't
-    # overflow. -> kann raus
+    # TODO: Usually that should be a uint64 or int128 which both do not
+    # exists in pytorch. Currently there is no guarantee that this does not
+    # overflow.
     intersection_id_array = target * offset + pred
 
-    # For every combination of (groundtruth segment, predicted segment)
+    # For every combination of (ground-truth segment, predicted segment)
     # with a non-empty intersection, this counts the number of pixels
     # in that intersection.
     intersection_areas = _ids_to_counts(intersection_id_array)
 
-    # Sets that are populated with which segments groundtruth/predicted
-    # segments have been matched with overlapping predicted/groundtruth
+    # Sets that are populated with which segments ground-truth/predicted
+    # segments have been matched with overlapping predicted/ground-truth
     # segments respectively.
     gt_matched = set()
     pred_matched = set()
@@ -128,9 +128,9 @@ def compare_and_accumulate(
         if gt_category != pred_category:
             continue
 
-        # Union between the groundtruth and predicted segments being
+        # Union between the ground-truth and predicted segments being
         # compared does not include the portion of the predicted segment
-        # that consists of groundtruth "void" pixels.
+        # that consists of ground-truth "void" pixels.
         r = prediction_void_overlap(pred_segment_id,
                                     void_segment_id,
                                     offset,
@@ -166,7 +166,7 @@ def compare_and_accumulate(
         if pred_segment_id in pred_matched:
             continue
         # A false positive is not penalized if is mostly ignored in the
-        # groundtruth.
+        # ground truth.
         pio = prediction_ignored_overlap(pred_segment_id,
                                          ignored_segment_ids,
                                          offset,
@@ -188,6 +188,8 @@ def realdiv_maybe_zero(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
 
 
 class PanopticQuality(Metric):
+    full_state_update = False
+
     def __init__(
         self, num_categories: int,
         ignored_label: int,
@@ -206,12 +208,12 @@ class PanopticQuality(Metric):
 
         assert len(self.is_thing) == self.num_categories
 
-        # The update function isn't vectorized, so we use a multiprocessing
-        # pool for parallelisation.
+        # The update function is not vectorized, so we use a multiprocessing
+        # pool for parallelization.
         if num_workers is None:
-            num_workers = mp.cpu_count()
+            num_workers = min(mp.cpu_count(), 32)
 
-        # Using 'fork' as a start methode dosn't work with cuda.
+        # Using 'fork' as a start method does not work with CUDA.
         ctx = mp.get_context('spawn')
         self.workers = ctx.Pool(processes=num_workers)
 
@@ -244,6 +246,7 @@ class PanopticQuality(Metric):
                        dist_reduce_fx='sum')
 
     def __del__(self):
+        self.workers.terminate()
         self.workers.close()
         self.workers.join()
 
@@ -268,7 +271,7 @@ class PanopticQuality(Metric):
         assert targets.shape == preds.shape
 
         # Important!!! The max value in instance_mask must be less then
-        # max instance id. Else in _naively_combine_labels it will overlow
+        # max instance id. Else in _naively_combine_labels it will overflow
         # to the next semantic id.
         processes = []
         for pred, target in zip(preds, targets):

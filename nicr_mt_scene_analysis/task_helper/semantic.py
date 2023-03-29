@@ -13,6 +13,7 @@ from ..loss import CrossEntropyLossSemantic
 from ..metric import MeanIntersectionOverUnion
 from ..types import BatchType
 from ..visualization import visualize_semantic_pil
+from ..visualization import visualize_heatmap_pil
 from .base import append_detached_losses_to_logs
 from .base import append_profile_to_logs
 from .base import TaskHelperBase
@@ -125,21 +126,32 @@ class SemanticTaskHelper(TaskHelperBase):
         target = target[mask] - 1    # first apply mask -> -1 is safe
         self._metric_iou.update(preds=preds.cpu(), target=target.cpu())
 
-        # store example for visualization
+        # store example for visualization (not fullres!)
         if batch_idx == 0:
-            _, ex = torch.max(predictions_post['semantic_output'][0], dim=0)
-            key = f'semantic_example_batch_{batch_idx}_0'
+            # class
+            ex = predictions_post['semantic_segmentation_idx'][0]
+            key = f'semantic_example_batch_idx_{batch_idx}_0'
             self._examples[key] = visualize_semantic_pil(
                 semantic_img=ex.cpu().numpy(),
                 colors=self._examples_cmap
+            )
+
+            # score
+            ex = predictions_post['semantic_segmentation_score'][0]
+            key = f'semantic_example_batch_score_{batch_idx}_0'
+            self._examples[key] = visualize_heatmap_pil(
+                heatmap_img=ex.cpu().numpy(),
+                min_=0, max_=1
             )
 
         return loss_dict, {}
 
     @append_profile_to_logs('semantic_epoch_end_time')
     def validation_epoch_end(self):
-        artifacts = {'semantic_cm': self._metric_iou.confmat.clone()}
-        logs = {'semantic_miou': self._metric_iou.compute()}
+        miou, ious = self._metric_iou.compute(return_ious=True)
+        logs = {'semantic_miou': miou}
+        artifacts = {'semantic_cm': self._metric_iou.confmat.clone(),
+                     'semantic_ious_per_class': ious.clone()}
 
         # reset metric (it is not done automatically)
         self._metric_iou.reset()

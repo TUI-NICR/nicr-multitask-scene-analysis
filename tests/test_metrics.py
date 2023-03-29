@@ -540,7 +540,11 @@ def test_panoptic_quality():
             semantic_output[:, n_class] = mask.squeeze()
 
         # Prepare data for postprocessing
-        instance_center = batch['instance_center'].float()
+        # In batch the shape of the heatmap is (n, h, w) however the
+        # network output is (n, 1, h, w).
+        # As the postprocessing expects the heatmap to be (n, 1, h, w)
+        # we need to unsqueeze the heatmap.
+        instance_center = batch['instance_center'].unsqueeze(1).float()
         instance_offset = batch['instance_offset'].float()
 
         instance_output = (instance_center, instance_offset)
@@ -567,7 +571,7 @@ def test_panoptic_quality():
         # This isn't a trivial task and would require matching of the instance
         # ids. As a quick test we just verify that the number of instances is
         # correct.
-        instance_result = result["panoptic_instance_segmentation"]
+        instance_result = result["panoptic_segmentation_deeplab_instance_idx"]
         # Note: Instance ids aren't unique over the batch axis.
         # Thats why we need to iterate over the axis.
         for batch_idx in range(n):
@@ -712,7 +716,7 @@ def test_root_mean_squared_error_perfect(masked):
 
     # create targets and predictions (both are equal -> perfect metric)
     target = torch.testing.make_tensor(
-        shape=(batch_size, 3, height, width),
+        (batch_size, 3, height, width),
         low=-1,
         high=1,
         dtype=torch.float,
@@ -723,7 +727,7 @@ def test_root_mean_squared_error_perfect(masked):
     # create random mask to select valid values
     if masked:
         mask = torch.testing.make_tensor(
-            shape=(batch_size, height, width),
+            (batch_size, height, width),
             dtype=torch.bool,
             device=device
         )
@@ -763,7 +767,7 @@ def test_root_mean_squared_error_totally_wrong(masked):
     # create random mask to select valid values
     if masked:
         mask = torch.testing.make_tensor(
-            shape=(batch_size, height, width),
+            (batch_size, height, width),
             dtype=torch.bool,
             device=device
         )

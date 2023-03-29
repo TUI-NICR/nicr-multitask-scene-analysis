@@ -28,6 +28,11 @@ class Backbone(abc.ABC, nn.Module):
     def stages_downsampling(self) -> List[int]:
         pass
 
+    @property
+    @abc.abstractmethod
+    def stages_memory_layout(self) -> List[str]:
+        pass
+
     def forward_stage(self, stage_idx: int, x: Tensor) -> Tensor:
         stage = self.stages[stage_idx]
         return stage(x)

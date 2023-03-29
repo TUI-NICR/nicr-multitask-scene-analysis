@@ -17,5 +17,6 @@ from .rgb import RandomHSVJitter
 from .resize import FullResCloner
 from .resize import RandomResize
 from .resize import Resize
+from .semantic import SemanticClassMapper
 from .torch import ToTorchTensors
 from .torch_transform_wrapper import TorchTransformWrapper

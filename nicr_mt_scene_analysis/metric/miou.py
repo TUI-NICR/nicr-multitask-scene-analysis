@@ -7,6 +7,8 @@ from torchmetrics import Metric
 
 
 class MeanIntersectionOverUnion(Metric):
+    full_state_update = False
+
     def __init__(
         self,
         n_classes: int,
@@ -49,7 +51,7 @@ class MeanIntersectionOverUnion(Metric):
         # update internal confusion matrix
         self.confmat += confmat
 
-    def compute(self) -> torch.Tensor:
+    def compute(self, return_ious: bool = False) -> torch.Tensor:
         tp = torch.diag(self.confmat).float()
         sum_pred = torch.sum(self.confmat, dim=0).float()
         sum_gt = torch.sum(self.confmat, dim=1).float()
@@ -71,5 +73,18 @@ class MeanIntersectionOverUnion(Metric):
         intersection = tp
         union = sum_pred + sum_gt - tp
         iou = intersection/union
+
+        if return_ious:
+            # additionally return iou for each class
+            # we assign nan if there is no gt and for first class (void)) if
+            # ignored
+            ious = torch.full((self._n_classes,), torch.nan,
+                              dtype=torch.float32)
+            iou_idx = mask.nonzero(as_tuple=True)[0]
+            if self._ignore_first_class:
+                iou_idx += 1
+            ious[iou_idx] = iou
+
+            return torch.mean(iou), ious
 
         return torch.mean(iou)

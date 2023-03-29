@@ -67,7 +67,20 @@ def test_context_module1(context_module, input_size, upsampling, training,
 @pytest.mark.parametrize('training', (False, True))
 def test_context_module2(context_module, input_size, upsampling, training,
                          tmp_path):
-    """Test context modules with 512x1024 inputs (Cityscapes)"""
+    """Test context modules with 1024x512 inputs (Cityscapes)"""
     train_input_size = (512//32, 1024//32)
+    context_module_test(context_module, train_input_size, input_size,
+                        upsampling, training, tmp_path)
+
+
+@pytest.mark.parametrize('context_module', ('ppm-1-5-10', 'appm-1-5-10',
+                                            'none'))
+@pytest.mark.parametrize('input_size', ((960//32, 1280//32),))
+@pytest.mark.parametrize('upsampling', ('bilinear', 'nearest'))
+@pytest.mark.parametrize('training', (False, True))
+def test_context_module1(context_module, input_size, upsampling, training,
+                         tmp_path):
+    """Test context modules with 1280x960 inputs"""
+    train_input_size = (960//32, 1280//32)
     context_module_test(context_module, train_input_size, input_size,
                         upsampling, training, tmp_path)

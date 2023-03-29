@@ -13,11 +13,11 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from ..utils import ConvNormAct
-from ..activation import get_activation_class
-from ..normalization import get_normalization_class
 from ...types import ContextModuleInputType
 from ...types import ContextModuleOutputType
+from ..activation import get_activation_class
+from ..normalization import get_normalization_class
+from ..utils import ConvNormAct
 
 
 class PyramidPoolingModule(nn.Module):
@@ -55,12 +55,11 @@ class PyramidPoolingModule(nn.Module):
         self.n_channels_reduction = n_channels_reduction
 
     def forward(self, x: ContextModuleInputType) -> ContextModuleOutputType:
-        x_size = x.size()
+        h, w = x.shape[2:]
 
         out = [x]
         features_context = []
         for f in self.features:
-            h, w = x_size[2:]
             y = f(x)
             features_context.append(y)
             if 'nearest' == self._upsampling:

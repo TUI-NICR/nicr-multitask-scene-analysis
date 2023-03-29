@@ -8,11 +8,11 @@ from typing import Any, Type
 
 from torch import nn
 
+from ...types import ContextModuleInputType
+from ...types import ContextModuleOutputType
 from ..activation import get_activation_class
 from ..normalization import get_normalization_class
 from ..utils import ConvNormAct
-from ...types import ContextModuleInputType
-from ...types import ContextModuleOutputType
 
 
 class NoContextModule(nn.Module):
@@ -32,7 +32,11 @@ class NoContextModule(nn.Module):
                                      activation=activation)
         else:
             self.layer = nn.Identity()
-        self.n_channels_reduction = None
+
+        # we do not have a reduction, we simply apply a conv+bn+act to
+        # adapt the number of channels, we assign n_channels_out to
+        # n_channels_reduction to ensure compatibility in scene decoder
+        self.n_channels_reduction = n_channels_out
 
     def forward(self, x: ContextModuleInputType) -> ContextModuleOutputType:
         x = self.layer(x)

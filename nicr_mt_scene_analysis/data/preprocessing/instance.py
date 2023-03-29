@@ -9,7 +9,6 @@ Parts of this code are taken and adapted from:
 from typing import Any, Dict, Tuple, Union
 
 import numpy as np
-from scipy import stats
 
 from ...types import BatchType
 from ...data.preprocessing.resize import get_fullres
@@ -135,8 +134,12 @@ class InstanceTargetGenerator:
             # note, we use mode of all relevant pixels as the pixels may have
             # different labels due to instance merging from 3d boxes
             if self._thing_class_ids is not None:
-                semantic_class = stats.mode(sample['semantic'][mask_indices],
-                                            axis=None)[0]
+                # As the bincount always starts with 0, the argmax will always
+                # return the class id of the most frequent class of the
+                # semantic labels.
+                semantic_class = np.bincount(
+                    sample['semantic'][mask_indices]
+                ).argmax()
                 if semantic_class not in self._thing_class_ids:
                     # we are not interested in this class
                     continue

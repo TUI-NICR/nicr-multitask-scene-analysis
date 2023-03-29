@@ -16,9 +16,11 @@ from ..metric import MeanIntersectionOverUnion
 from ..types import BatchType
 from .base import append_profile_to_logs
 from .base import TaskHelperBase
+from ..visualization import PanopticColorGenerator
 from ..visualization import visualize_panoptic_pil
 from ..visualization import visualize_instance_pil
 from ..visualization import visualize_semantic_pil
+from ..visualization import visualize_heatmap_pil
 
 from nicr_scene_analysis_datasets.dataset_base import SemanticLabelList
 
@@ -36,26 +38,19 @@ class PanopticTaskHelper(TaskHelperBase):
         self._semantic_classes_is_thing = semantic_classes_is_thing
         self._semantic_label_list = semantic_label_list
 
-        # Used for panopticapi visualization
-        categories = []
-        for idx, label in enumerate(self._semantic_label_list):
-            label_dict = {}
-            label_dict['supercategory'] = label.class_name
-            label_dict['name'] = label.class_name
-            label_dict['id'] = idx
-            label_dict['isthing'] = int(label.is_thing)
-            label_dict['color'] = [int(a) for a in label.color]
-            categories.append(label_dict)
-        categories = {cat['id']: cat for cat in categories}
-        self._coco_categories = categories
-
-        # during validation, we store some examples for visualization purposes
-        self._examples = {}
-
         # hypersim has more than 256 instances per image
         self._max_instances_per_category = 1 << 16     # 1 << 8
         self._thing_ids = np.where(self._semantic_classes_is_thing)[0]
         self._with_orientation = False
+
+        # during validation, we store some examples for visualization purposes
+        self._examples = {}
+        self._color_generator = PanopticColorGenerator(
+            classes_colors=self._semantic_label_list.colors,
+            classes_is_thing=self._semantic_label_list.classes_is_thing,
+            max_instances=self._max_instances_per_category,
+            void_label=0,
+        )
 
     def initialize(self, device: torch.device):
         # keep metrics on cpu
@@ -99,7 +94,7 @@ class PanopticTaskHelper(TaskHelperBase):
 
         # get the orientation results
         if self._with_orientation:
-            orientations_results = predictions_post['orientations_panoptic_segmentation_deeplab_instance_segmentation']
+            orientations_results = predictions_post['orientations_panoptic_segmentation_deeplab_instance']
             orientations_targets = batch['orientations_present']
         else:
             orientations_results = None
@@ -130,34 +125,59 @@ class PanopticTaskHelper(TaskHelperBase):
         self._metric_iou.update(preds=deeplab_semantic.cpu(),
                                 target=target_semantic.cpu())
 
-        # store example for visualization
+        # store example for visualization (not fullres!)
         if 0 == batch_idx:
+            panoptic_seg = predictions_post['panoptic_segmentation_deeplab'][0]
+
             # panoptic segmentation
-            deeplab_ex = panoptic_deeplab_preds[0].cpu()
             key = f'panoptic_example_batch_deeplab_{batch_idx}_0'
             self._examples[key] = visualize_panoptic_pil(
-                deeplab_ex.numpy(),
-                self._semantic_n_classes,
-                self._coco_categories,
-                self._max_instances_per_category
+                panoptic_seg.cpu().numpy(),
+                shared_color_generator=self._color_generator
             )
+
             # semantic segmentation
+            panoptic_seg_semantic = panoptic_seg // self._max_instances_per_category
             key = f'panoptic_example_batch_deeplab_semantic_{batch_idx}_0'
             self._examples[key] = visualize_semantic_pil(
-                semantic_img=deeplab_semantic[0].cpu().numpy(),
+                semantic_img=panoptic_seg_semantic.cpu().numpy(),
                 colors=self._semantic_label_list.colors_array
             )
-            # instance segmentation
-            instance_img = torch.zeros_like(panoptic_deeplab_preds[0])
-            for idx, id_ in enumerate(torch.unique(panoptic_deeplab_preds[0])):
-                mask = panoptic_deeplab_preds[0] == id_
-                instance_img[mask] = idx
 
-            instance_foreground = \
-                predictions_post[get_fullres_key('panoptic_foreground_mask')].cpu()
-            instance_img[~instance_foreground[0]] = 0
+            # instance segmentation
+            panoptic_ids = predictions_post['panoptic_segmentation_deeplab_ids'][0]
+            instance_img = torch.zeros_like(panoptic_seg)
+            for p_id, i_id in panoptic_ids.items():
+                # map panoptic ids to instance ids (smaller numbers)
+                instance_img[panoptic_seg == p_id] = i_id
             key = f'panoptic_example_batch_deeplab_instance_{batch_idx}_0'
             self._examples[key] = visualize_instance_pil(instance_img.cpu().numpy())
+
+            # semantic score
+            if 'panoptic_segmentation_deeplab_semantic_score' in predictions_post:
+                ex = predictions_post['panoptic_segmentation_deeplab_semantic_score'][0]
+                key = f'panoptic_example_batch_deeplab_semantic_score_{batch_idx}_0'
+                self._examples[key] = visualize_heatmap_pil(
+                    heatmap_img=ex.cpu().numpy(),
+                    min_=0, max_=1
+                )
+
+            # instance score
+            if 'panoptic_segmentation_deeplab_instance_score' in predictions_post:
+                ex = predictions_post['panoptic_segmentation_deeplab_instance_score'][0]
+                key = f'panoptic_example_batch_deeplab_instance_score_{batch_idx}_0'
+                self._examples[key] = visualize_heatmap_pil(
+                    heatmap_img=ex.cpu().numpy(),
+                    min_=0, max_=1
+                )
+            # panoptic score
+            if 'panoptic_segmentation_deeplab_panoptic_score' in predictions_post:
+                ex = predictions_post['panoptic_segmentation_deeplab_panoptic_score'][0]
+                key = f'panoptic_example_batch_deeplab_panoptic_score_{batch_idx}_0'
+                self._examples[key] = visualize_heatmap_pil(
+                    heatmap_img=ex.cpu().numpy(),
+                    min_=0, max_=1
+                )
 
         return {}, {}
 
@@ -179,8 +199,9 @@ class PanopticTaskHelper(TaskHelperBase):
         # miou after panoptic merging as done in panoptic deeplab
         artifacts['panoptic_deeplab_semantic_cm'] = \
             self._metric_iou.confmat.clone()
-        logs['panoptic_deeplab_semantic_miou'] = \
-            self._metric_iou.compute()
+        miou, ious = self._metric_iou.compute(return_ious=True)
+        logs['panoptic_deeplab_semantic_miou'] = miou
+        artifacts['panoptic_deeplab_semantic_ious_per_class'] = ious
 
         # reset metric (it is not done automatically)
         self._metric_iou.reset()

@@ -9,7 +9,7 @@ from PIL.Image import Image
 from ._pil import to_pil_img
 
 
-def visualize_depth(depth_img: np.array) -> np.array:
+def visualize_depth(depth_img: np.ndarray) -> np.ndarray:
     assert depth_img.ndim == 2
     _min = depth_img.min()
     _max = depth_img.max()
@@ -23,7 +23,7 @@ def visualize_depth(depth_img: np.array) -> np.array:
 
 
 def visualize_depth_pil(
-    depth_img: np.array,
+    depth_img: np.ndarray,
 ) -> Image:
     assert depth_img.ndim == 2
     return to_pil_img(visualize_depth(depth_img))

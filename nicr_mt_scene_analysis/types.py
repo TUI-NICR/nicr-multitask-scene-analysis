@@ -14,15 +14,10 @@ _TensorTuple = Tuple[Tensor, ...]
 BatchType = Dict[str, Any]
 
 # encoder
-EncoderForwardType = Tuple[
-    # RGB
-    Optional[Tensor],
-    # depth
-    Optional[Tensor]
-]
+EncoderForwardType = Dict[str, Tensor]    # modality: features
 EncoderInputType = EncoderForwardType
 EncoderSkipType = EncoderForwardType
-EncoderSkipsType = Tuple[EncoderSkipType, ...]
+EncoderSkipsType = Dict[str, EncoderSkipType]    # downsampling: skip features
 EncoderOutputType = Tuple[EncoderForwardType, EncoderSkipsType]
 
 # context module

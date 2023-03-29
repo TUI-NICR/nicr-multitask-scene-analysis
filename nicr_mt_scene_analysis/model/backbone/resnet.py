@@ -97,6 +97,13 @@ class ResNetBackbone(Backbone):
             4*2**(2-sum(replace_stride_with_dilation[:2])),
             4*2**(3-sum(replace_stride_with_dilation))
         ]
+        self._stages_memory_layout = [
+            'nchw',
+            'nchw',
+            'nchw',
+            'nchw',
+            'nchw'
+        ]
 
     @property
     def stages(self) -> List[Union[nn.Sequential, nn.Module]]:
@@ -109,6 +116,10 @@ class ResNetBackbone(Backbone):
     @property
     def stages_downsampling(self) -> List[int]:
         return self._stages_downsampling
+
+    @property
+    def stages_memory_layout(self) -> List[str]:
+        return self._stages_memory_layout
 
     def _make_layer(
         self,

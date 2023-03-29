@@ -10,6 +10,8 @@ from torchmetrics import Metric
 
 
 class RootMeanSquaredError(Metric):
+    full_state_update = False
+
     """
     Computes Root Mean Squared Error (RMSE) (averaged over pixels).
     """
