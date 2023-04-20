@@ -414,7 +414,6 @@ class InstanceTaskHelper(TaskHelperBase):
 
         # panoptic segmentation as done in panoptic deeplab
         pq_deeplab_result = self._mae_pq_deeplab.compute(suffix="_deeplab")
-        self._mae_pq_deeplab.reset()
 
         for key, value in pq_deeplab_result.items():
             if value.numel() == 1:
@@ -422,9 +421,16 @@ class InstanceTaskHelper(TaskHelperBase):
             else:
                 artifacts[f'instance_{key}'] = value
 
+        # reset metric (it is not done automatically)
+        self._mae_pq_deeplab.reset()
+
+        # orientation
         if self._with_orientation:
             mae_gt_rad, mae_gt_deg = self._mae_gt.compute()
             logs['orientation_mae_gt_rad'] = mae_gt_rad
             logs['orientation_mae_gt_deg'] = mae_gt_deg
+
+            # reset metric (it is not done automatically)
+            self._mae_gt.reset()
 
         return artifacts, self._examples, logs

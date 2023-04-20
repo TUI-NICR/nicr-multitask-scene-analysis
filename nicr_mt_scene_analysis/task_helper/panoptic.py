@@ -188,13 +188,15 @@ class PanopticTaskHelper(TaskHelperBase):
 
         # panoptic segmentation as done in panoptic deeplab
         pq_deeplab_result = self._mae_pq_deeplab.compute(suffix="_deeplab")
-        self._mae_pq_deeplab.reset()
 
         for key, value in pq_deeplab_result.items():
             if value.numel() == 1:
                 logs[f'panoptic_{key}'] = value
             else:
                 artifacts[f'panoptic_{key}'] = value
+
+        # reset metric (it is not done automatically)
+        self._mae_pq_deeplab.reset()
 
         # miou after panoptic merging as done in panoptic deeplab
         artifacts['panoptic_deeplab_semantic_cm'] = \

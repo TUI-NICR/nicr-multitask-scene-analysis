@@ -211,7 +211,10 @@ Some other stuff that might be useful to you.
 
 > Most relevant changes are listed below. Note that backward compatibility might be broken.
 
-**Version 0.2.0 (March 28, 2023)**  
+**Version 0.2.1 (Apr 20, 2023)**  
+- fix bug in `task_helper/instance.py`: metric object for mean absolute angular error was not reset after computing the metric (at the end of an epoch)
+
+**Version 0.2.0 (Mar 28, 2023)**  
 - add Swin Transformers as backbone
 - add ResNet with less downsampling
 - add new dense MLP-based decoders for semantic, instance, and normal
