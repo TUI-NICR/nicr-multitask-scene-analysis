@@ -535,7 +535,7 @@ def test_qualitative_torchtransform_wrapper():
         name='nyuv2',
         split='train',
         sample_keys=('rgb', 'depth')
-        )
+    )
 
     for i in range(5):
         sample = dataset[i]

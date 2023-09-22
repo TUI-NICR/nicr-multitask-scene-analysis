@@ -61,7 +61,7 @@ in IEEE International Joint Conference on Neural Networks (IJCNN), pp. 1-10, 202
 
 ## Installation
 
-To use our `nicr-multitask-scene-analysis` package, you must install PyTorch and TorchVision first (see [PyTorch documentation](https://pytorch.org/get-started/locally/)). 
+To use our `nicr-multitask-scene-analysis` package, you must install PyTorch and TorchVision first (see [PyTorch documentation](https://pytorch.org/get-started/locally/)).
 The code was tested with PyTorch 1.10, 1.13 as well as 2.0.
 
 ```bash
@@ -207,14 +207,19 @@ Some other stuff that might be useful to you.
 - `CheckpointHelper`: Helps matching given short metric names (e.g., 'miou' or 'bacc') to actual metric key names of the task helpers. Furthermore, it tracks all matched metrics in order to determine whether a new best value was reached and, thus, a checkpoint should be created.
 - `CSVLogger`: Simple metrics to CSV logger that is capable of handling changing keys.
 
+
 ## Changelog
 
 > Most relevant changes are listed below. Note that backward compatibility might be broken.
 
-**Version 0.2.1 (Apr 20, 2023)**  
+**Version 0.2.2 (Jun 16, 2023)**
+- add support for individual subset selection to `RandomSamplerSubset` when using with concatenated datasets (ConcatDataset)
+- add seed argument to `PanopticColorGenerator`
+
+**Version 0.2.1 (Apr 20, 2023)**
 - fix bug in `task_helper/instance.py`: metric object for mean absolute angular error was not reset after computing the metric (at the end of an epoch)
 
-**Version 0.2.0 (Mar 28, 2023)**  
+**Version 0.2.0 (Mar 28, 2023)**
 - add Swin Transformers as backbone
 - add ResNet with less downsampling
 - add new dense MLP-based decoders for semantic, instance, and normal

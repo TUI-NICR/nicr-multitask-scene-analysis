@@ -31,6 +31,7 @@ def get_dataset(name: str,
         'scenenetrgbd': {'semantic_n_classes': 13},
         'hypersim': {'subsample': 5 if split == 'train' else None},
         'coco': {},
+        'scannet': {'subsample': 50, 'semantic_n_classes': 40},
     }
 
     Dataset = datasets.get_dataset_class(name)
