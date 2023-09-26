@@ -448,7 +448,7 @@ def test_semanticclassmapper():
     sample_pre = pre(deepcopy(sample))
 
     # check that mapping was applied
-    mask_changed = np.zeros_like(sample['semantic'], dtype=np.bool)
+    mask_changed = np.zeros_like(sample['semantic'], dtype='bool')
     for c in classes_to_map:
         mask = sample['semantic'] == c
         assert (sample_pre['semantic'][mask] == new_label).all()
@@ -535,7 +535,7 @@ def test_qualitative_torchtransform_wrapper():
         name='nyuv2',
         split='train',
         sample_keys=('rgb', 'depth')
-        )
+    )
 
     for i in range(5):
         sample = dataset[i]

@@ -45,7 +45,8 @@ class PanopticColorGenerator:
         classes_colors: Sequence[Tuple[int, int, int]],
         classes_is_thing: Tuple[bool],
         max_instances: int = 100,
-        void_label: int = 0
+        void_label: int = 0,
+        seed: int = 42
     ) -> None:
         assert len(classes_colors) == len(classes_is_thing)
         self._classes_colors = classes_colors
@@ -53,6 +54,7 @@ class PanopticColorGenerator:
         self._max_instances = max_instances
         self._max_classes = len(self._classes_colors)
         self._void_label = void_label
+        self._rng = np.random.default_rng(seed)
 
         self._taken_colors = set((0, 0, 0))    # exclude black as it is void
         self._color_counter = Counter()
@@ -112,9 +114,9 @@ class PanopticColorGenerator:
 
         # thing class
         def random_color(base, max_dist=45):
-            new_color = base + np.random.randint(low=-max_dist,
-                                                 high=max_dist+1,
-                                                 size=3)
+            new_color = base + self._rng.integers(low=-max_dist,
+                                                  high=max_dist+1,
+                                                  size=3)
             return tuple(np.maximum(0, np.minimum(255, new_color)))
 
         base_color = self._classes_colors[semantic_class_idx]

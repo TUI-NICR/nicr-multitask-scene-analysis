@@ -7,6 +7,8 @@ import pytest
 from torch.utils.data import DataLoader
 
 from nicr_mt_scene_analysis.data import RandomSamplerSubset
+from nicr_mt_scene_analysis.testing.dataset import get_dataset
+from nicr_scene_analysis_datasets import ConcatDataset
 
 
 @pytest.mark.parametrize('subset', (1.0, 0.5))
@@ -29,7 +31,7 @@ def test_sampler(deterministic, subset):
     # check if subset is properly applied
     assert len(a) == int(len(dataset) * subset)
 
-    # data should be shuffled, thus in a different order
+    # data should be shuffled, thus, in a different order
     assert a != b
 
     a.sort()
@@ -95,6 +97,69 @@ def test_sampler_with_dataloader(n_workers, persistent_workers,
     b.sort()
 
     if deterministic or subset == 1:
+        # after sorting both should be equal for determinist case
+        # if subset == 1, then all indices should be present, thus, both should
+        # be equal even if deterministic is False
+        assert a == b
+    else:
+        # if subset is set and deterministic is False, we expect to get
+        # different indices for each call
+        assert a != b
+
+
+@pytest.mark.parametrize('deterministic', (True, False))
+@pytest.mark.parametrize('subset', (1.0, 0.5, (0.8, 0.3, 0.2)))
+def test_sampler_with_concat_dataset(deterministic, subset):
+    """Test Random Subsampler with ConcatDataset"""
+    dataset1 = get_dataset(
+        name='nyuv2',
+        split='train',
+        sample_keys=('identifier',)
+    )
+    dataset2 = get_dataset(
+        name='hypersim',
+        split='train',
+        sample_keys=('identifier',)
+    )
+    dataset3 = get_dataset(
+        name='hypersim',
+        split='train',
+        sample_keys=('identifier',)
+    )
+
+    dataset = ConcatDataset(dataset1, dataset2, dataset3)
+
+    sampler = RandomSamplerSubset(
+        data_source=dataset,
+        subset=subset,
+        deterministic=deterministic
+    )
+
+    # iteration 1 (first epoch)
+    a = list(sampler)
+
+    # iteration 2 (another epoch)
+    b = list(sampler)
+
+    # check length that length for both iterations is the same
+    assert len(a) == len(b)
+
+    # check if subset is properly applied
+    lengths = [len(dataset1), len(dataset2), len(dataset3)]
+    if not isinstance(subset, tuple):
+        # same subset for all datasets
+        assert len(a) == int(sum(lengths) * subset)
+    else:
+        # different subset for each dataset
+        assert len(a) == sum([int(le*s) for le, s in zip(lengths, subset)])
+
+    # data should be shuffled, thus, in a different order
+    assert a != b
+
+    a.sort()
+    b.sort()
+
+    if deterministic or subset == 1.0:
         # after sorting both should be equal for determinist case
         # if subset == 1, then all indices should be present, thus, both should
         # be equal even if deterministic is False
