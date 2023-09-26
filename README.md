@@ -21,8 +21,8 @@ The source code is published under Apache 2.0 license, see [license file](LICENS
 If you use the source code, please cite the paper related to your work:
 
 
-**PanopticNDT: Efficient and Robust Panoptic Mapping** (IEEE Xplore, arXiv):
-> Seichter, D., Stephan, B., Fischedick, S., Müller, S., Rabes, L., Gross, H.-M.
+**PanopticNDT: Efficient and Robust Panoptic Mapping** (IEEE Xplore, [arXiv](https://arxiv.org/abs/2309.13635) (with appendix)):
+> Seichter, D., Stephan, B., Fischedick, S. B., Müller, S., Rabes, L., Gross, H.-M.
 *PanopticNDT: Efficient and Robust Panoptic Mapping*,
 in IEEE/RSJ International Conference on Intelligent Robots and Systems (IROS), 2023.
 
@@ -77,7 +77,7 @@ The code was tested with PyTorch 1.10, 1.13 as well as 2.0.
 # - PyTorch, TorchVision (see note above)
 # - NICR Scene Analysis Datasets (see below)
 # - all remaining dependencies are installed automatically
-python -m pip install git+https://github.com/TUI-NICR/nicr-scene-analysis-datasets.git@v0.5.2 [--user]
+python -m pip install git+https://github.com/TUI-NICR/nicr-scene-analysis-datasets.git@v0.5.6 [--user]
 
 # option 1: directly install to your site packages
 python -m pip install git+https://github.com/TUI-NICR/nicr-multitask-scene-analysis.git [--user]
@@ -220,9 +220,10 @@ Some other stuff that might be useful to you.
 
 > Most relevant changes are listed below. Note that backward compatibility might be broken.
 
-**Version 0.2.2 (Jun 16, 2023)**
-- add support for individual subset selection to `RandomSamplerSubset` when using with concatenated datasets (ConcatDataset)
+**Version 0.2.2 (Sep 26, 2023)**
+- add support for individual subset selection to `RandomSamplerSubset` when using with concatenated datasets (ConcatDataset) - requires `nicr-scene-analysis-datasets` >= 0.5.6
 - add seed argument to `PanopticColorGenerator`
+- tests: some fixes, skip testing with Python 3.6, add testing with Python 3.11
 
 **Version 0.2.1 (Apr 20, 2023)**
 - fix bug in `task_helper/instance.py`: metric object for mean absolute angular error was not reset after computing the metric (at the end of an epoch)

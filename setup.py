@@ -22,7 +22,7 @@ def run_setup():
         'numpy',
         'pillow',
         'scipy',
-        'nicr_scene_analysis_datasets>=0.5.2'
+        'nicr_scene_analysis_datasets>=0.5.6'
     ]
     if sys.version_info <= (3, 7):
         requirements.append('torchmetrics==0.8.2')

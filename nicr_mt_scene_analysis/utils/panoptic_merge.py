@@ -131,7 +131,8 @@ def deeplab_merge_semantic_and_instance_np(
         thing_mask = (ins_seg == ins_id) & is_thing
         if len(np.nonzero(thing_mask)[0]) == 0:
             continue
-        class_id = stats.mode(sem_seg[thing_mask].flatten()).mode
+        class_id = stats.mode(sem_seg[thing_mask].flatten(),
+                              keepdims=False).mode
         # ignore void
         if class_id == 0:
             continue

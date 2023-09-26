@@ -151,7 +151,7 @@ def test_sampler_with_concat_dataset(deterministic, subset):
         assert len(a) == int(sum(lengths) * subset)
     else:
         # different subset for each dataset
-        assert len(a) == sum([int(l*s) for l, s in zip(lengths, subset)])
+        assert len(a) == sum([int(le*s) for le, s in zip(lengths, subset)])
 
     # data should be shuffled, thus, in a different order
     assert a != b
