@@ -110,14 +110,21 @@ tests_py311:    # current
         REPORT_COVERAGE: "false"
 
 update_pip_package:
+    <<: *conda_env
     stage: deploy
+    variables:
+        PYTHON_VERSION_TO_USE: "3.11"
     rules:
         - if: '$CI_PIPELINE_SOURCE == "schedule"'
           when: never
         - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
           when: manual
     script:
-        - pip install twine
+        # install pytorch to pass pytorch check in setup.py
+        - conda install pytorch=2.0.1 torchvision=0.15.2 cpuonly -c pytorch
+
+        # install remaining dependencies
+        - python -m pip install twine
 
         # build package
         - python setup.py sdist bdist_wheel

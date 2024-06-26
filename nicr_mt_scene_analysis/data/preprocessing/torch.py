@@ -31,7 +31,11 @@ class ToTorchTensors:
 
             if value.dtype == 'uint16':
                 # pytorch does not support uint16
-                continue
+                value = value.astype('int32')
+
+            if value.dtype == 'uint32':
+                # pytorch does not support uint32
+                value = value.astype('int64')
 
             # ensure that array is C contiguous
             value = np.ascontiguousarray(value)

@@ -20,11 +20,15 @@ The source code is published under Apache 2.0 license, see [license file](LICENS
 
 If you use the source code, please cite the paper related to your work:
 
+---
 
-**PanopticNDT: Efficient and Robust Panoptic Mapping** (IEEE Xplore, [arXiv](https://arxiv.org/abs/2309.13635) (with appendix)):
+**PanopticNDT: Efficient and Robust Panoptic Mapping** ([IEEE Xplore](https://ieeexplore.ieee.org/document/10342137), [arXiv](https://arxiv.org/abs/2309.13635) (with appendix and some minor fixes)):
 > Seichter, D., Stephan, B., Fischedick, S. B., Müller, S., Rabes, L., Gross, H.-M.
 *PanopticNDT: Efficient and Robust Panoptic Mapping*,
 in IEEE/RSJ International Conference on Intelligent Robots and Systems (IROS), 2023.
+
+<details>
+<summary>BibTeX</summary>
 
 ```bibtex
 @inproceedings{panopticndt2023iros,
@@ -35,10 +39,17 @@ in IEEE/RSJ International Conference on Intelligent Robots and Systems (IROS), 2
 }
 ```
 
+</details>
+
+---
+
 **Efficient Multi-Task Scene Analysis with RGB-D Transformers** ([IEEE Xplore](https://ieeexplore.ieee.org/document/10191977), [arXiv](https://arxiv.org/abs/2306.05242)):
 > Fischedick, S., Seichter, D., Schmidt, R., Rabes, L., Gross, H.-M.
 *Efficient Multi-Task Scene Analysis with RGB-D Transformers*,
 in IEEE International Joint Conference on Neural Networks (IJCNN), pp. 1-10, 2023.
+
+<details>
+<summary>BibTeX</summary>
 
 ```bibtex
 @inproceedings{emsaformer2023ijcnn,  
@@ -51,10 +62,17 @@ in IEEE International Joint Conference on Neural Networks (IJCNN), pp. 1-10, 202
 }
 ```
 
+</details>
+
+---
+
 **Efficient Multi-Task RGB-D Scene Analysis for Indoor Environments** ([IEEE Xplore](https://ieeexplore.ieee.org/document/9892852), [arXiv](https://arxiv.org/abs/2207.04526)):
 > Seichter, D., Fischedick, S., Köhler, M., Gross, H.-M.
 *Efficient Multi-Task RGB-D Scene Analysis for Indoor Environments*,
 in IEEE International Joint Conference on Neural Networks (IJCNN), pp. 1-10, 2022.
+
+<details>
+<summary>BibTeX</summary>
 
 ```bibtex
 @inproceedings{emsanet2022ijcnn,
@@ -67,25 +85,28 @@ in IEEE International Joint Conference on Neural Networks (IJCNN), pp. 1-10, 202
 }
 ```
 
-## Installation
+</details>
 
+---
+
+## Installation
 To use our `nicr-multitask-scene-analysis` package, you must install PyTorch and TorchVision first (see [PyTorch documentation](https://pytorch.org/get-started/locally/)).
-The code was tested with PyTorch 1.10, 1.13 as well as 2.0.
+The code was tested with PyTorch 1.10, 1.13, 2.0 as well as 2.3.
 
 ```bash
 # requirements:
 # - PyTorch, TorchVision (see note above)
 # - NICR Scene Analysis Datasets (see below)
 # - all remaining dependencies are installed automatically
-python -m pip install git+https://github.com/TUI-NICR/nicr-scene-analysis-datasets.git@v0.5.6 [--user]
+python -m pip install "git+https://github.com/TUI-NICR/nicr-scene-analysis-datasets.git@v0.7.0"
 
 # option 1: directly install to your site packages
-python -m pip install git+https://github.com/TUI-NICR/nicr-multitask-scene-analysis.git [--user]
+python -m pip install "git+https://github.com/TUI-NICR/nicr-multitask-scene-analysis.git"
 
 # option 2: install editable version
 git clone https://github.com/TUI-NICR/nicr-multitask-scene-analysis.git
 cd /path/to/this/repository
-python -m pip install -e . [--user]
+python -m pip install -e "./"
 ```
 
 Note, if you use this repository along with our other projects, please follow the installation instructions given there. This ensures installing the correct version.
@@ -219,6 +240,26 @@ Some other stuff that might be useful to you.
 ## Changelog
 
 > Most relevant changes are listed below. Note that backward compatibility might be broken.
+
+**Version 0.2.3 (Jun 26, 2024)**
+- add support for MPS device (only inference tested, training might work as well)
+- add support for inference with CPU device
+- fix inplace bug in `PanopticPostprocessing` (only when device is CPU)
+- copy predicted orientations to instance meta dict (only for instances from panoptic segmentation)
+- visualization:
+  - add `cross_thickness` and `cross_markersize` to `visualize_instance_center*`
+  - add `background_color` to `visualize_instance_offset*`
+  - small fix in `InstanceColorGenerator` - first color of given colormap was not used (new visualizations will have a color shift)
+  - use 'coolwarm' instead 'gray' colormap in `visualize_instance_center*` (this allows to better distinguish between zero values and masked areas)
+- force 'panoptic' sample key to always be of dtype uint32 (see nicr-scene-analysis-datasets v0.6.1 release notes)
+- ensure correct dtype handling in `resize` (dtype for panoptic was changed and wrongly handled)
+- add support for resizing uint32 panoptic with OpenCV (fallback to 4*uint8, only for nearest-neighbor interpolation)
+- add upcasts from uint16 to int32 and from uint32 to int64 in `ToTorchTensors`
+- add `keys_to_ignore` to `Resize` preprocessor
+- fix for PIL/Pillow 10
+- do not use black (first color in default colormap) in `InstanceColorGenerator` for first instance id when no `cmap_without_void` is passed to constructor
+- fix minor PIL issue (np.asarray / np.asanyarray return read-only arrays, np.array is used now)
+- use pooling indices to disambiguate local maxima in instance center derivation (note, this might change metrics slightly; however, it resolves instance-center-assignment issues when using lower precisions, i.e., float16 or even more quantized types) -- thanks to Benedict Stephan for debugging and fixing this issue
 
 **Version 0.2.2 (Sep 26, 2023)**
 - add support for individual subset selection to `RandomSamplerSubset` when using with concatenated datasets (ConcatDataset) - requires `nicr-scene-analysis-datasets` >= 0.5.6

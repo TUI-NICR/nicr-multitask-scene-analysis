@@ -91,6 +91,10 @@ class DenseDecoderModule(nn.Module):
         # for multiscale supervision
         out_side = out if self.training else None
 
+        # TODO(dase): create parameter to control whether side outputs should
+        #             be created during inference as well
+        # out_side = out  # always keep side outputs (useful for visualization)
+
         out = self.upsample(out)
 
         return out, out_side

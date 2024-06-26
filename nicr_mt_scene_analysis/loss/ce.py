@@ -15,7 +15,7 @@ class CrossEntropyLossSemantic(LossBase):
         self,
         weights: Optional[torch.Tensor] = None,
         label_smoothing: float = 0.0,
-        weighted_reduction: bool = False    # was used in first ESANet
+        weighted_reduction: bool = False    # this reduction was used in ESANet
     ) -> None:
         super().__init__()
 

@@ -492,7 +492,8 @@ def test_panoptic_quality_only():
     assert pq_metric.iou_per_class[0] == 0
 
 
-def test_panoptic_quality():
+@pytest.mark.parametrize('heatmap_nms_kernel_size', (1, 3))
+def test_panoptic_quality(heatmap_nms_kernel_size):
     # TODO: Using subsampling for the last test would be better.
     # However, this can change the number of semantic classes, which
     # are processed by the PQ Metric.
@@ -510,7 +511,9 @@ def test_panoptic_quality():
     is_thing = dataset_config.semantic_label_list_without_void.classes_is_thing
 
     semantic_postprocessing = get_postprocessing_class('semantic')()
-    instance_postprocessing = get_postprocessing_class('instance')()
+    instance_postprocessing = get_postprocessing_class('instance')(
+        heatmap_nms_kernel_size=heatmap_nms_kernel_size
+    )
     postprocessing = get_postprocessing_class('panoptic')
     postprocessing = postprocessing(
         semantic_postprocessing=semantic_postprocessing,
@@ -607,21 +610,41 @@ def test_panoptic_quality():
         pq_metric.update(panoptic_preds, panoptic_targets)
 
     result = pq_metric.compute()
-    assert result['things_pq'] == 1.0
-    assert result['things_rq'] == 1.0
-    assert result['things_sq'] == 1.0
+
+    # Version 0.2.3 changes instance postprocessing slightly (see changelog).
+    # Starting from version 0.2.3, instances with the same center score are
+    # merged within a nms pooling window. This change might change metrics
+    # slightly; however, it resolves instance-center-assignment issues when
+    # using lower precisions, i.e., float16 or even more quantized types.
+    #
+    # This test uses ground-truth data in which all instances have the same
+    # center point score. Thus, using larger nms windows (see
+    # heatmap_nms_kernel_size) can lead to dropping instances and metric values
+    # lower than 1.0. To test whether the postprocessing can reconstruct the
+    # ground-truth instances, we use a kernel size of 1. To also check that
+    # larger kernel sizes work, we test with a kernel size of 3. As explained
+    # above the metric value can be lower than 1.0. That is why we set the
+    # target value to 1.0 for kernel size 1 and 0.99 for kernel size 3.
+    target_metric_value = 1.0
+    if heatmap_nms_kernel_size == 3:
+        target_metric_value = 0.99
+
+    assert result['things_pq'] >= target_metric_value
+    assert result['things_rq'] >= target_metric_value
+    assert result['things_sq'] >= target_metric_value
     assert result['things_num_categories'] == float(sum(is_thing))
 
-    assert result['stuff_pq'] == 1.0
-    assert result['stuff_rq'] == 1.0
-    assert result['stuff_sq'] == 1.0
+    assert result['stuff_pq'] >= target_metric_value
+    assert result['stuff_rq'] >= target_metric_value
+    assert result['stuff_sq'] >= target_metric_value
     assert result['stuff_num_categories'] == n_semantic_classes-1-float(sum(is_thing))
 
-    assert result['all_pq'] == 1.0
-    assert result['all_rq'] == 1.0
-    assert result['all_sq'] == 1.0
+    assert result['all_pq'] >= target_metric_value
+    assert result['all_rq'] >= target_metric_value
+    assert result['all_sq'] >= target_metric_value
     assert result['all_num_categories'] == n_semantic_classes-1
-    # Assert that there was no void match
+
+    # assert that there was no void match
     assert pq_metric.iou_per_class[0] == 0
 
 

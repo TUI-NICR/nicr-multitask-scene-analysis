@@ -2,8 +2,17 @@
 """
 .. codeauthor:: Daniel Seichter <daniel.seichter@tu-ilmenau.de>
 """
+from typing import Tuple, Union
+
+from packaging import version
+
 import numpy as np
+import PIL
 from PIL import Image
+from PIL import ImageFont
+
+
+_IS_PIL_10 = version.parse(PIL.__version__) >= version.parse('10.0.0')
 
 
 def to_pil_img(img: np.ndarray, palette=None) -> Image.Image:
@@ -24,3 +33,15 @@ def to_pil_img(img: np.ndarray, palette=None) -> Image.Image:
         img_pil.putpalette(p)
 
     return img_pil
+
+
+def font_get_text_wh(
+    font: Union[ImageFont.ImageFont, ImageFont.FreeTypeFont],
+    text: str
+) -> Tuple[int, int]:
+    if _IS_PIL_10:
+        (left, top, right, bottom) = font.getbbox(text)
+        return right-left, bottom-top
+    else:
+        # note: this function was removed in PIL 10
+        return font.getsize(text)
