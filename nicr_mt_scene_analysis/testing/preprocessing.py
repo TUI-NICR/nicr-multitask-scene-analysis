@@ -43,6 +43,8 @@ def show_results(sample, sample_pre, title, force_show=False):
     keys = _get_relevant_spatial_keys(sample_pre)
 
     fig, axes = plt.subplots(2, len(keys))
+    if 1 == len(keys):
+        axes = axes[:, np.newaxis]  # add dummy dimension for indexing
     for i, key in enumerate(keys):
         axes_key = axes[0, i], axes[1, i]
 

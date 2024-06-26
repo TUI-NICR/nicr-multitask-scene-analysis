@@ -43,7 +43,8 @@ class SemanticTaskHelper(TaskHelperBase):
         # loss
         if self._class_weights is not None:
             self._class_weights = torch.tensor(self._class_weights,
-                                               device=device).float()
+                                               dtype=torch.float,
+                                               device=device)
         self._loss = CrossEntropyLossSemantic(
             weights=self._class_weights,
             label_smoothing=self._label_smoothing

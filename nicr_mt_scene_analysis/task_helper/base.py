@@ -43,7 +43,6 @@ def append_detached_losses_to_logs(disabled=False):
         return wrapper
 
     return decorator
-    pass
 
 
 def append_profile_to_logs(key, disabled=False):

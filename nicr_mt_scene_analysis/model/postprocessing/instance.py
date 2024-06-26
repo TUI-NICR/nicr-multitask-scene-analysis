@@ -17,6 +17,7 @@ from ...utils import biternion2rad
 from ...types import BatchType
 from ...types import DecoderRawOutputType
 from ...types import PostprocessingOutputType
+from ...utils import mps_cpu_fallback
 from .dense_base import DensePostprocessingBase
 
 
@@ -40,6 +41,10 @@ class InstancePostprocessing(DensePostprocessingBase):
         self._heatmap_threshold = heatmap_threshold
         self._top_k_instances = top_k_instances
         self._normalized_offset = normalized_offset
+
+        # lazy initialization for pixel_index_map used for disambiguating of
+        # local maxima
+        self._pixel_index_map: Union[torch.Tensor, None] = None
 
         # added after EMSANet release
         self._heatmap_apply_foreground_mask = heatmap_apply_foreground_mask
@@ -70,6 +75,7 @@ class InstancePostprocessing(DensePostprocessingBase):
 
         return grid
 
+    @mps_cpu_fallback(disabled=False)
     def _get_instance_centers(
         self,
         center_heatmap: torch.Tensor,
@@ -80,21 +86,50 @@ class InstancePostprocessing(DensePostprocessingBase):
         center_heatmap = F.threshold(center_heatmap,
                                      self._heatmap_threshold,
                                      -1)
-        # do keypoint NMS
+        # do keypoint non-maximum supression (NMS)
         # note that we ignore instance centers less than (kernel size -1)/2
-        # pixels away of the borders as this areas may contain resizing
-        # artifacts
-        center_heatmap_pooled = F.max_pool2d(
+        # pixels away of the borders as these areas may contain resizing
+        # artifacts (when using learned upsampling due to same padding)
+        # in addition we remove ambiguous maxima if multiple pixels
+        # within the kernel have the exact same value
+        # (happens more often when using quanitzation)
+
+        center_heatmap_pooled, pooling_indices = F.max_pool2d(
             center_heatmap,
             kernel_size=self._heatmap_nms_kernel_size,
             stride=1,
+            return_indices=True,
         )
+        # pad max-pooling outputs so we can compare them with the original
         center_heatmap_pooled = F.pad(center_heatmap_pooled,
                                       pad=(self._heatmap_nms_padding,)*4)
+        pooling_indices = torch.nn.functional.pad(
+            pooling_indices,
+            pad=(self._heatmap_nms_padding,)*4
+        )
+
+        # create map with index for each pixel if necessary
+        if (
+            self._pixel_index_map is None or
+            self._pixel_index_map.shape != center_heatmap.shape or
+            self._pixel_index_map.device != center_heatmap.device
+        ):
+            self._pixel_index_map = torch.arange(
+                0,
+                center_heatmap.shape[-2] * center_heatmap.shape[-1],
+                device=center_heatmap.device
+            ).reshape(1, 1, center_heatmap.shape[-2], center_heatmap.shape[-1])
+
+        # a local maximum is only a local maximum if the value resulting
+        # during max pooling is its own value and not from a neighboring pixel
+        is_no_local_max = (pooling_indices != self._pixel_index_map)
+
+        center_heatmap[is_no_local_max] = -1
+
         center_heatmap[center_heatmap != center_heatmap_pooled] = -1
         batch_size = center_heatmap.shape[0]
 
-        # find top k instances for each batch - shape of scores is  (b, topk)
+        # find top k instances for each batch - shape of scores is (b, topk)
         scores, _ = torch.topk(center_heatmap.flatten(start_dim=1),
                                k=self._top_k_instances, dim=1)
 
@@ -132,6 +167,7 @@ class InstancePostprocessing(DensePostprocessingBase):
 
         return torch.stack(instance_centers, dim=0), instance_center_list
 
+    @mps_cpu_fallback(disabled=False)
     def _get_instance_segmentation(
         self,
         center_heatmap: torch.Tensor,
@@ -231,6 +267,7 @@ class InstancePostprocessing(DensePostprocessingBase):
 
         return instance_segmentation, instance_meta
 
+    @mps_cpu_fallback(disabled=False)
     def _get_instance_orientation(
         self,
         orientation: torch.Tensor,

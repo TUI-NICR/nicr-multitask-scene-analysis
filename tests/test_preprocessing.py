@@ -323,6 +323,64 @@ def test_resize(height, width):
     show_results(sample, sample_pre, f'Resize: h: {height}, w: {width}')
 
 
+@pytest.mark.parametrize('random_input', (False, True))
+def test_resize_uint32(random_input):
+    """Test Resize with uint32 input, i.e., panoptic segmentation"""
+
+    # we use OpenCV for resizing, however, OpenCV does not support uint32
+    # inputs, which is a problem for the panoptic segmentation ('panoptic' key),
+    # we circumvent this limitation by viewing the uint32 input as uint8 input,
+    # i.e, by converting from single-channel uint32 (grayscale uint32) to
+    # 4-channel uint8 (rgba uint8)
+    # note: this workaround is only possible for nearest interpolation!
+
+    # create preprocessor
+    height, width = 101, 150
+    pre = Resize(height=height, width=width)
+
+    # prepare sample
+    if not random_input:
+        sample = get_dummy_sample()
+        semantic = sample['semantic']
+        instance = sample['instance']
+    else:
+        semantic = np.random.randint(
+            low=0, high=np.iinfo('uint16').max + 1,
+            size=(12, 13),
+            dtype='uint16'
+        )
+        instance = np.random.randint(
+            low=0, high=np.iinfo('uint16').max + 1,
+            size=(12, 13),
+            dtype='uint16'
+        )
+    shift = 2**16
+    panoptic = semantic.astype('uint32') * shift + instance
+    sample = {'panoptic': panoptic}
+
+    # apply preprocessor
+    sample_pre = pre(deepcopy(sample))
+
+    # some simple checks
+    assert sample_pre['panoptic'].shape == (height, width)
+    assert sample_pre['panoptic'].dtype == 'uint32'
+
+    # check values
+    np.testing.assert_array_equal(
+        np.unique(sample_pre['panoptic']),
+        np.unique(sample['panoptic'])
+    )
+    np.testing.assert_array_equal(
+        np.unique(sample_pre['panoptic'] // shift),
+        np.unique(semantic)
+    )
+    np.testing.assert_array_equal(
+        np.unique(sample_pre['panoptic'] % shift),
+        np.unique(instance)
+    )
+    show_results(sample, sample_pre, f'Resize with uint32 input')
+
+
 @pytest.mark.parametrize('min_scale', (0.8, 1.0))
 @pytest.mark.parametrize('max_scale', (1.0, 1.4))
 def test_randomresize(min_scale, max_scale):

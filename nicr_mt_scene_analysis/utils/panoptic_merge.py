@@ -47,8 +47,13 @@ def naive_merge_semantic_and_instance_np(
     thing_ids: Sequence[int],
     void_label: int
 ) -> Tuple[torch.Tensor, Dict[int, int]]:
+    # check some input assumptions to ensure that uint32 for output is fine
+    assert sem_seg.dtype in (np.uint8, np.uint16)
+    assert ins_seg.dtype == np.uint16
+    assert void_label >= 0
+
     # In case thing mask does not align with semantic prediction.
-    pan_seg = np.zeros_like(sem_seg, dtype=np.int64) + void_label
+    pan_seg = np.zeros_like(sem_seg, dtype=np.uint32) + void_label
 
     # Keep track of instance id for each class.
     class_id_tracker = Counter()
@@ -76,8 +81,8 @@ def naive_merge_semantic_and_instance_np(
             # ignore void
             if class_id == 0:
                 continue
-            class_id = class_id.astype(np.int64)
-            class_id_tracker[class_id.item()] += 1
+            class_id = class_id.astype(np.uint32)
+            class_id_tracker[class_id.item()] += 1   # -> first id is 1
             new_ins_id = class_id_tracker[class_id.item()]
             panoptic_id = (class_id * max_instances_per_category + new_ins_id)
             id_dict[int(panoptic_id)] = int(ins_id)
@@ -95,7 +100,7 @@ def naive_merge_semantic_and_instance_np(
         if class_id.item() in thing_ids:
             # thing class
             continue
-        class_id = class_id.astype(np.int64)
+        class_id = class_id.astype(np.uint32)
         stuff_mask = (sem_seg == class_id) & (ins_seg == 0)
         pan_seg[stuff_mask] = (class_id * max_instances_per_category)
 
@@ -110,8 +115,13 @@ def deeplab_merge_semantic_and_instance_np(
     thing_ids: List[int],
     void_label: int
 ) -> Tuple[np.ndarray, Dict[int, int]]:
+    # check some input assumptions to ensure that uint32 for output is fine
+    assert sem_seg.dtype in (np.uint8, np.uint16)
+    assert ins_seg.dtype == np.uint16
+    assert void_label >= 0
+
     # In case thing mask does not align with semantic prediction.
-    pan_seg = np.zeros_like(sem_seg, dtype=np.int64) + void_label
+    pan_seg = np.zeros_like(sem_seg, dtype=np.uint32) + void_label
     is_thing = (ins_seg > 0) & (semantic_thing_seg > 0)
 
     # Keep track of instance id for each class.
@@ -136,8 +146,8 @@ def deeplab_merge_semantic_and_instance_np(
         # ignore void
         if class_id == 0:
             continue
-        class_id = class_id.astype(np.int64)
-        class_id_tracker[class_id.item()] += 1
+        class_id = class_id.astype(np.uint32)
+        class_id_tracker[class_id.item()] += 1   # -> first id is 1
         new_ins_id = class_id_tracker[class_id.item()]
         panoptic_id = (class_id * max_instances_per_category + new_ins_id)
         id_dict[int(panoptic_id)] = int(ins_id)
@@ -152,7 +162,7 @@ def deeplab_merge_semantic_and_instance_np(
         if class_id.item() in thing_ids:
             # thing class
             continue
-        class_id = class_id.astype(np.int64)
+        class_id = class_id.astype(np.uint32)
         stuff_mask = (sem_seg == class_id) & (ins_seg == 0)
         pan_seg[stuff_mask] = (class_id * max_instances_per_category)
 

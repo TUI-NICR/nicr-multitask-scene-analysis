@@ -63,11 +63,15 @@ def resize(
     sample: BatchType,
     height: int,
     width: int,
+    keys_to_ignore: Optional[Iterable[str]] = None,
 ) -> BatchType:
+    keys_to_ignore_list = list(keys_to_ignore or [])
     # avoid resizing backups again
-    keys_to_ignore = tuple(k for k in sample if k.endswith(FULLRES_SUFFIX))
+    keys_to_ignore_list.extend(
+        [k for k in sample if k.endswith(FULLRES_SUFFIX)]
+    )
 
-    for key in _get_relevant_spatial_keys(sample, keys_to_ignore):
+    for key in _get_relevant_spatial_keys(sample, keys_to_ignore_list):
         value = sample[key]
 
         # determine interpolation
@@ -84,12 +88,37 @@ def resize(
         if fix_bool:
             value = value.astype('uint8')
 
+        # check for uint32 input (OpenCV cannot handle uint32 inputs, however,
+        # we use uint32 for the panoptic key)
+        # we circumvent this limitation by viewing the uint32 input as uint8
+        # input, i.e, by converting from single-channel uint32 (grayscale
+        # uint32) to 4-channel uint8 (rgba uint8)
+        # note: this workaround is only possible for nearest interpolation!
+        fix_uint32 = False
+        if value.dtype == np.uint32 and interpolation == cv2.INTER_NEAREST:
+            fix_uint32 = True
+            assert value.ndim == 2    # single-channel only
+            shape = value.shape
+            value = value.view(np.uint8)    # view as 4-channel uint8
+            value.shape = (*shape, 4)    # inplace reshape
+
+        # OpenCV does only support some specific dtypes
+        assert value.dtype in (
+            np.uint8, np.int8, np.uint16, np.int16,
+            np.int32, np.float32, np.float64
+        )
+
         # apply resize
         value = cv2.resize(value, (width, height), interpolation=interpolation)
 
         # bool check part 2
         if fix_bool:
             value = value > 0
+
+        # uint32 check part 2
+        if fix_uint32:
+            # convert back to single-channel uint32
+            value = value.view(np.uint32)[..., 0]
 
         sample[key] = value
 
@@ -101,12 +130,17 @@ class Resize:
         self,
         height: int,
         width: int,
+        keys_to_ignore: Optional[Iterable[str]] = None,
     ) -> None:
         self._height = height
         self._width = width
+        self._keys_to_ignore = keys_to_ignore
 
     def __call__(self, sample: BatchType) -> BatchType:
-        return resize(sample, self._height, self._width)
+        return resize(
+            sample, self._height, self._width,
+            keys_to_ignore=self._keys_to_ignore
+        )
 
 
 class RandomResize:

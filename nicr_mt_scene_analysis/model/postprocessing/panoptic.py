@@ -16,6 +16,7 @@ from ...types import PostprocessingOutputType
 from .dense_base import DensePostprocessingBase
 from .instance import InstancePostprocessing
 from ...utils.panoptic_merge import deeplab_merge_batch
+from ...utils import to_cpu_if_mps_tensor
 from .semantic import SemanticPostprocessing
 
 
@@ -115,6 +116,10 @@ class PanopticPostprocessing(DensePostprocessingBase):
         # resulting panoptic segmentation, as panoptic merging may change
         # classes or instances
         semantic_segmentation = r_dict['semantic_segmentation_idx']
+
+        # as of Nov 2023, MPS does not support "isin" -> fallback on cpu
+        semantic_segmentation = to_cpu_if_mps_tensor(semantic_segmentation)
+
         foreground_mask = torch.isin(
             semantic_segmentation,
             test_elements=torch.tensor(self._thing_class_ids,
@@ -166,7 +171,10 @@ class PanopticPostprocessing(DensePostprocessingBase):
         if self._compute_scores:
             # compute semantic score (semantic may have changed)
             semantic_scores = r_dict['semantic_softmax_scores']
-            pan_semantic_idx = pan_seg_semantic.to(semantic_scores.device)
+            pan_semantic_idx = pan_seg_semantic.to(
+                semantic_scores.device,
+                copy=True    # inplace op below!
+            )
             pan_semantic_idx = pan_semantic_idx.unsqueeze(1)    # add channel axis
             # note that we have pay attention to void, as it has no valid score
             void_mask = pan_semantic_idx == 0
@@ -289,5 +297,12 @@ class PanopticPostprocessing(DensePostprocessingBase):
                     instance_segmentation=r_dict['panoptic_segmentation_deeplab_instance_idx'],
                     foreground_mask=foreground_mask_orientation
                 )
+
+            # also copy orientations to instance meta dict, use nan if no
+            # orientation was estimated
+            for batch_idx in range(len(instance_segmentation_meta)):
+                for id_ in r_dict['panoptic_segmentation_deeplab_instance_meta'][batch_idx]:
+                    instance_segmentation_meta[batch_idx][id_]['orientation'] = \
+                        r_dict['orientations_panoptic_segmentation_deeplab_instance'][batch_idx].get(id_, float('nan'))
 
         return r_dict

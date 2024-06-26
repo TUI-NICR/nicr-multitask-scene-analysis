@@ -16,7 +16,9 @@ from PIL import ImageDraw
 
 from ..utils import np_rad2deg
 from ..utils import np_biternion2deg
+from ._pil import font_get_text_wh
 from ._pil import to_pil_img
+from .generic import visualize_heatmap
 
 
 class InstanceColorGenerator:
@@ -29,6 +31,8 @@ class InstanceColorGenerator:
             # TODO: nicer colormap that really has more than 256 colors
             # hacky way to have more than 256 colors
             cmap_without_void = self._get_simple_colormap(256)
+            # remove first color as it is black (0,0,0)
+            cmap_without_void = cmap_without_void[1:]
 
         self.base_cmap = np.array(cmap_without_void, dtype='uint8')
 
@@ -49,7 +53,12 @@ class InstanceColorGenerator:
         # update dictionary
         if id_ not in self.id_to_color:
             # get index for next color
-            next_idx = len(self.id_to_color)
+
+            # NOTE: up to v0.2.2, we used the following line, which does not
+            # use the first color of the colormap
+            # next_idx = len(self.id_to_color)
+
+            next_idx = len(self.id_to_color) - 1    # -1 to respect 0/void
             if next_idx >= self.base_cmap.shape[0]:
                 warnings.warn(f'Colormap limit reached, reusing colors.')
                 next_idx = next_idx % self.base_cmap.shape[0]
@@ -98,6 +107,9 @@ def visualize_instance_center(
     width: Optional[int] = None,
     min_: Optional[int] = None,
     max_: Optional[int] = None,
+    heatmap_cmap: str = 'coolwarm',
+    cross_thickness: int = 2,
+    cross_markersize: int = 15,
 ) -> np.ndarray:
     assert center_img is not None or centers is not None
     assert center_img is None or center_img.ndim == 2
@@ -109,9 +121,8 @@ def visualize_instance_center(
             min_ = min_ or 0
             max_ = max_ or 1
 
-            center_img_01 = (center_img - min_) / (max_ - min_)
-
-            return np.clip(center_img_01*255, 0, 255).astype('uint8')
+            return visualize_heatmap(center_img,
+                                     min_=min_, max_=max_, cmap=heatmap_cmap)
 
         # instance center given as mask, convert to tuple of coordinates
         centers = tuple(zip(*center_img.nonzero()))
@@ -122,7 +133,8 @@ def visualize_instance_center(
     for y, x in centers:
         img = cv2.drawMarker(img, position=(x, y), color=255,
                              markerType=cv2.MARKER_TILTED_CROSS,
-                             thickness=2, markerSize=15)
+                             thickness=cross_thickness,
+                             markerSize=cross_markersize)
     return img
 
 
@@ -133,10 +145,15 @@ def visualize_instance_center_pil(
     width: Optional[int] = None,
     min_: Optional[int] = None,
     max_: Optional[int] = None,
+    heatmap_cmap: str = 'coolwarm',
+    cross_thickness: int = 2,
+    cross_markersize: int = 15
 ) -> Image.Image:
     return to_pil_img(
         visualize_instance_center(
-            center_img, centers, height, width, min_, max_
+            center_img, centers, height, width,
+            min_, max_, heatmap_cmap,
+            cross_thickness, cross_markersize
         ),
         palette=None
     )
@@ -144,7 +161,8 @@ def visualize_instance_center_pil(
 
 def visualize_instance_offset(
     offset_img: np.ndarray,
-    foreground_mask: Union[None, np.ndarray] = None
+    foreground_mask: Union[None, np.ndarray] = None,
+    background_color: Tuple[int, int, int] = (255, 255, 255),
 ) -> np.ndarray:
     assert offset_img.ndim == 3
     assert offset_img.shape[-1] == 2
@@ -169,16 +187,23 @@ def visualize_instance_offset(
 
     rgb_img = cv2.cvtColor(offset_vec_img, cv2.COLOR_HSV2RGB)
     if foreground_mask is not None:
-        rgb_img[foreground_mask == 0] = [255, 255, 255]
+        rgb_img[foreground_mask == 0] = background_color
     return rgb_img
 
 
 def visualize_instance_offset_pil(
     offset_img: np.ndarray,
-    foreground_mask: Union[None, np.ndarray] = None
+    foreground_mask: Union[None, np.ndarray] = None,
+    background_color: Tuple[int, int, int] = (255, 255, 255),
 ) -> Image.Image:
-    return to_pil_img(visualize_instance_offset(offset_img, foreground_mask),
-                      palette=None)
+    return to_pil_img(
+        visualize_instance_offset(
+            offset_img,
+            foreground_mask,
+            background_color=background_color
+        ),
+        palette=None
+    )
 
 
 def visualize_instance(
@@ -260,14 +285,19 @@ def visualize_instance_orientations(
         pil_img = Image.fromarray(orientation_img)
         if orientations[instance_id] is not None:
             text = f'{np_rad2deg(orientations[instance_id]):.0f}°'
-            w, h = font.getsize(text)
+            w, h = font_get_text_wh(font, text)
             pil_draw = ImageDraw.Draw(pil_img)
             pil_draw.rectangle((c_x-w//2, c_y-h//2, c_x+w//2, c_y+h//2),
                                fill=bg_color_font)
             pil_draw.text((c_x, c_y),
                           text=text,
                           font=font, fill=color, anchor="mm")
-        orientation_img = np.asanyarray(pil_img)
+
+        # starting with newer PIL versions (> 8.4 ?), np.asanyarray or
+        # np.asarray do not work anymore for converting PIL images, as the
+        # returned array is read-only; thus, we use np.array to make it
+        # writable for the next iteration (actually, the data is copied)
+        orientation_img = np.array(pil_img)
 
     return orientation_img
 
