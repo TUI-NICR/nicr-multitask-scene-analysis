@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Generische Hilfsfunktion für Dense Decoder (semantic, normal, embedding).
+.. codeauthor:: Soehnke Fischedick <soehnke-benedikt.fischedick@tu-ilmenau.de>
 """
 from collections import OrderedDict
 from typing import Optional, Type, List

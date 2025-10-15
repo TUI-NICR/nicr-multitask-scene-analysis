@@ -39,14 +39,12 @@ def test_torchmetrics_iou(n_classes_without_void):
         task='multiclass',
         average='macro'
     ).to(device)
-    # reduction='elementwise_mean'
 
     # metric with void masked before
     metric_masked = IoU(
         num_classes=n_classes_without_void,
         task='multiclass',
         average='macro'
-        # reduction='elementwise_mean'
     ).to(device)
 
     # bugfix: confmat is initialized as type float32 (in v0.6.1) which
@@ -109,7 +107,6 @@ def test_own_miou(n_classes_without_void):
         num_classes=n_classes_without_void,
         task='multiclass',
         average='macro'
-        # reduction='elementwise_mean'
     ).to(device)
 
     # bugfix: confmat is initialized as type float32 (in v0.6.1) which
