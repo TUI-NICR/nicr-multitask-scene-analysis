@@ -9,7 +9,6 @@ Some parts of this code are based on:
 and:
     https://github.com/tensorflow/models/blob/v2.7.0/official/vision/beta/evaluation/panoptic_quality_evaluator_test.py
 """
-import tarfile
 import pytest
 import torch
 from torchvision.transforms import Compose

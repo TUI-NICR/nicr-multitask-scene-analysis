@@ -36,13 +36,15 @@ def test_torchmetrics_iou(n_classes_without_void):
     metric = IoU(
         num_classes=n_classes_without_void + 1,
         ignore_index=0,
-        reduction='elementwise_mean'
+        task='multiclass',
+        average='macro'
     ).to(device)
 
     # metric with void masked before
     metric_masked = IoU(
         num_classes=n_classes_without_void,
-        reduction='elementwise_mean'
+        task='multiclass',
+        average='macro'
     ).to(device)
 
     # bugfix: confmat is initialized as type float32 (in v0.6.1) which
@@ -78,7 +80,7 @@ def test_torchmetrics_iou(n_classes_without_void):
     miou_masked = metric_masked.compute()
 
     print(f"miou: {miou}, miou_masked: {miou_masked}")
-    assert miou == miou_masked
+    torch.allclose(miou, miou_masked)
 
     # as of 01/08/2022:
     # - masking before is faster
@@ -103,7 +105,8 @@ def test_own_miou(n_classes_without_void):
     # reference metric
     metric_ref = IoU(
         num_classes=n_classes_without_void,
-        reduction='elementwise_mean'
+        task='multiclass',
+        average='macro'
     ).to(device)
 
     # bugfix: confmat is initialized as type float32 (in v0.6.1) which
@@ -150,7 +153,8 @@ def test_own_miou(n_classes_without_void):
           f"miou_torchmetrics: {miou_ref}")
 
     # check results
-    assert miou == miou_with_void == miou_ref
+    assert torch.allclose(miou, miou_with_void)
+    assert torch.allclose(miou, miou_ref)
     assert torch.isnan(ious_with_void[0])    # void is ignored, so iou is nan
     assert (ious_with_void[1:] == ious).all()   # remaining ious must be equal
 

@@ -1,0 +1,4 @@
+torch
+torchvision
+torchmetrics==1.5.2; python_version == "3.8"
+torchmetrics==1.8.2; python_version > "3.8"  # latest test version

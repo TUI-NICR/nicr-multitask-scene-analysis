@@ -1,0 +1,5 @@
+matplotlib
+numpy
+pillow
+scipy
+nicr-scene-analysis-datasets>=0.8.3

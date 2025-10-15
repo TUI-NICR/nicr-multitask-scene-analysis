@@ -1,0 +1,2 @@
+scikit-image
+pytest>=3.0.2

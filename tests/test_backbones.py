@@ -86,7 +86,7 @@ def test_resnet_nonbottleneck1d(name, n_input_channels, pretrained, activation,
     model(x)
 
     filename = f'backbone_{name}'
-    filename += f'__block_nonbottleneck1d'
+    filename += '__block_nonbottleneck1d'
     filename += f'__act_{activation}'
     filename += '.onnx'
     filepath = os.path.join(tmp_path, filename)
@@ -166,7 +166,7 @@ def test_resnetse_nonbottleneck1d(name, n_input_channels, pretrained,
     model(x)
 
     filename = f'backbone_{name}'
-    filename += f'__block_nonbottleneck1d'
+    filename += '__block_nonbottleneck1d'
     filename += f'__act_{activation}'
     filename += '.onnx'
     filepath = os.path.join(tmp_path, filename)

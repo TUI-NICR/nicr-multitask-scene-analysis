@@ -27,7 +27,6 @@ def batch_to_sample(batch, idx):
 def test_compare_merge_methodes(name):
     dataloader = get_dataloader_for_tasks(('semantic', 'instance'), name=name)
     dataset_config = dataloader.dataset.config
-    n_semantic_classes = len(dataset_config.semantic_label_list)
     is_thing = dataset_config.semantic_label_list.classes_is_thing
     max_instances_per_category = (1 << 16)
     thing_ids = np.where(is_thing)[0]
