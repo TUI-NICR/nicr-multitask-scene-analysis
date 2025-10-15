@@ -7,7 +7,14 @@ from functools import wraps
 import torch
 
 
-_MPS_AVAILABLE = torch.backends.mps.is_available()
+def _is_mps_available() -> bool:
+    # Check if torch has the mps backend attribute
+    if not hasattr(torch, 'backends') or not hasattr(torch.backends, 'mps'):
+        return False
+    return torch.backends.mps.is_available()
+
+
+_MPS_AVAILABLE = _is_mps_available()
 
 
 def _is_mps_tensor(x) -> bool:

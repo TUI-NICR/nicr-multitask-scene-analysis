@@ -6,6 +6,8 @@ import numpy as np
 from skimage import data
 import torch
 
+from ..data.preprocessing.base import AppliedPreprocessingMeta
+from ..data.preprocessing.base import APPLIED_PREPROCESSING_KEY
 from ..data.preprocessing.utils import _get_relevant_spatial_keys
 from ..visualization import visualize_instance_offset
 from ..visualization import visualize_orientation
@@ -102,7 +104,7 @@ def show_results(sample, sample_pre, title, force_show=False):
 
 
 def get_dummy_sample():
-    img = data.astronaut()
+    img = data.astronaut()  # shape: 256x256x3
     # get dummy depth as first channel * 64
     depth = img[..., 0].copy().astype('uint16') * 2**6
     # get some dummy mask by thresholding the second channel
@@ -113,12 +115,12 @@ def get_dummy_sample():
     instance = np.zeros(shape, dtype='uint8')
     instance[40:100, 40:100] = 1
     instance[150:200, 40:100] = 2
-    instance[0:200, 200:250] = 3
+    instance[0:200, 200:250] = 3    # stuff instance -> not relevant for instances/orientation
     instance[300:400, 200:250] = 4
     semantic = np.zeros(shape, dtype='uint8')
     semantic[40:100, 40:100] = 1
     semantic[150:200, 40:100] = 2
-    semantic[0:200, 200:250] = 10    # not relevant for instances/orientation
+    semantic[0:200, 200:250] = 10    # stuff instance -> not relevant for instances/orientation
     semantic[300:400, 200:250] = 3
 
     # assign some orientations
@@ -127,10 +129,13 @@ def get_dummy_sample():
                     2: np.deg2rad(90),
                     3: np.deg2rad(135)}
 
-    return {'rgb': img,
-            'depth': depth,
-            'instance': instance,
-            'semantic': semantic,
-            'some_mask': some_mask,
-            'orientations': orientations,
-            'scene': 0}
+    return {
+        'rgb': img,
+        'depth': depth,
+        'instance': instance,
+        'semantic': semantic,
+        'some_mask': some_mask,
+        'orientations': orientations,
+        'scene': 0,
+        APPLIED_PREPROCESSING_KEY: AppliedPreprocessingMeta()  # start: empty list
+    }

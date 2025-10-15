@@ -13,22 +13,22 @@ import torch
 from torch.utils.data import Sampler
 from torch.utils.data._utils.collate import default_collate
 
-
-class CollateIgnoredDict(dict):
-    """Enables a custom pytorch collate function ignore this dict."""
-    pass
+from ._types import AppliedPreprocessingMeta
+from ._types import CollateIgnoredDict
 
 
 def collate(
     data: List[Any],
-    type_blacklist: Tuple[Type] = (np.ndarray, CollateIgnoredDict)
+    type_blacklist: Tuple[Type] = (np.ndarray, ),
+    default_type_blacklist: Tuple[Type] = (CollateIgnoredDict,
+                                           AppliedPreprocessingMeta)
 ) -> Any:
     # input for first call is List[BatchType]
 
     # get first element for type and dict keys later
     elem = data[0]
 
-    if isinstance(elem, type_blacklist):
+    if isinstance(elem, type_blacklist+default_type_blacklist):
         # do not modify blacklisted types, e.g., numpy arrays, keep as list
         return data
 
@@ -60,8 +60,10 @@ class RandomSamplerSubset(Sampler[int]):
         self.subset = subset
         self.deterministic = deterministic
 
-        if isinstance(self._data_source, ConcatDataset) and \
-                isinstance(self.subset, (list, tuple)):
+        if all((
+            isinstance(self._data_source, ConcatDataset),
+            isinstance(self.subset, (list, tuple))
+        )):
             # dataset is a concatenated dataset, so subset should be given as
             # sequence of floats
             assert len(self.subset) == len(self._data_source.datasets)

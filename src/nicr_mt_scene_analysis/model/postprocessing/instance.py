@@ -12,7 +12,7 @@ import torch
 import torch.nn.functional as F
 
 from ...data.preprocessing.resize import get_fullres_key
-from ...data.preprocessing.resize import get_fullres_shape
+from ...data.preprocessing.resize import get_valid_region_slices_and_fullres_shape
 from ...utils import biternion2rad
 from ...types import BatchType
 from ...types import DecoderRawOutputType
@@ -379,17 +379,20 @@ class InstancePostprocessing(DensePostprocessingBase):
             r_dict['instance_segmentation_gt_foreground'] = segmentation
             # note that the area and the center coordinates are derived
             # from the raw prediction, the network output might be further
-            # umsampled later
+            # upsampled later
             r_dict['instance_segmentation_gt_meta'] = meta
 
-            # resize to original shape (assume same shape for all samples)
-            # note: we resize only the final prediction as resizing centers and
+            # crop and resize output to full resolution (original shape)
+            # note, we assume same shape for all samples in batch
+            # note, we resize only the final prediction as resizing centers and
             # offsets is much more complicated
-            shape = get_fullres_shape(batch, 'instance')
+            crop_slices, resize_shape = \
+                get_valid_region_slices_and_fullres_shape(batch, 'instance')
             r_dict[get_fullres_key('instance_segmentation_gt_foreground')] = \
-                self._resize_prediction(
+                self._crop_to_valid_region_and_resize_prediction(
                     segmentation,
-                    shape=shape,
+                    valid_region_slices=crop_slices,
+                    shape=resize_shape,
                     mode='nearest'
                 )
 
@@ -406,11 +409,13 @@ class InstancePostprocessing(DensePostprocessingBase):
             # resize to original shape (assume same shape for all samples)
             # note: we resize only the final prediction as resizing centers and
             # offsets is much more complicated
-            shape = get_fullres_shape(batch, 'instance')
+            crop_slices, resize_shape = \
+                get_valid_region_slices_and_fullres_shape(batch, 'instance')
             r_dict[get_fullres_key('instance_segmentation_all_foreground')] = \
-                self._resize_prediction(
+                self._crop_to_valid_region_and_resize_prediction(
                     segmentation,
-                    shape=shape,
+                    valid_region_slices=crop_slices,
+                    shape=resize_shape,
                     mode='nearest'
                 )
 

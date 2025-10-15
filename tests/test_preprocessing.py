@@ -3,18 +3,17 @@
 .. codeauthor:: Daniel Seichter <daniel.seichter@tu-ilmenau.de>
 """
 from copy import deepcopy
-from mimetypes import suffix_map
-from sys import prefix
 
 import cv2
 import numpy as np
 import pytest
 from skimage import data
 import torch
-import torchvision
-from torchvision.transforms import InterpolationMode
+import torchvision.transforms as tv_trans
 
-from nicr_mt_scene_analysis.data.preprocessing.rgb import adjust_hsv
+from nicr_mt_scene_analysis.data.preprocessing import AppliedPreprocessingMeta
+from nicr_mt_scene_analysis.data.preprocessing import get_applied_preprocessing_meta
+
 from nicr_mt_scene_analysis.data.preprocessing import CloneEntries
 from nicr_mt_scene_analysis.data.preprocessing import FlatCloneEntries
 from nicr_mt_scene_analysis.data.preprocessing import InstanceClearStuffIDs
@@ -28,14 +27,30 @@ from nicr_mt_scene_analysis.data.preprocessing import RandomHorizontalFlip
 from nicr_mt_scene_analysis.data.preprocessing import RandomHSVJitter
 from nicr_mt_scene_analysis.data.preprocessing import RandomResize
 from nicr_mt_scene_analysis.data.preprocessing import Resize
+from nicr_mt_scene_analysis.data.preprocessing import ScaleDepth
 from nicr_mt_scene_analysis.data.preprocessing import SemanticClassMapper
 from nicr_mt_scene_analysis.data.preprocessing import ToTorchTensors
 from nicr_mt_scene_analysis.data.preprocessing import TorchTransformWrapper
+
+from nicr_mt_scene_analysis.data.preprocessing.rgb import adjust_hsv
 from nicr_mt_scene_analysis.data.preprocessing.utils import _get_relevant_spatial_keys
 from nicr_mt_scene_analysis.testing.dataset import get_dataset
 from nicr_mt_scene_analysis.testing.preprocessing import get_dummy_sample
 from nicr_mt_scene_analysis.testing.preprocessing import show_results
 from nicr_mt_scene_analysis.utils import np_biternion2rad
+
+
+def _check_applied_preprocessing_meta(sample, preprocessor, keys_to_exist=None):
+    pre_key = '_applied_preprocessing'
+    assert pre_key in sample
+
+    for meta in sample[pre_key]:
+        if meta['type'] != preprocessor.__class__.__name__:
+            continue
+
+        for key in (keys_to_exist or []):
+            assert key in meta
+        break
 
 
 @pytest.mark.parametrize('keys_to_clone', (None, ('rgb', 'depth')))
@@ -51,7 +66,7 @@ def test_cloneentries(keys_to_clone):
     if keys_to_clone is None:
         keys_to_clone = tuple(sample.keys())
 
-    assert len(sample_pre) == len(sample) + 1
+    assert len(sample_pre) == len(sample) + 1    # +1 for clone
     assert len(sample_pre[pre.clone_key]) == len(keys_to_clone)
 
     clone = sample_pre[pre.clone_key]
@@ -70,6 +85,12 @@ def test_cloneentries(keys_to_clone):
         else:
             assert id(entry_clone) != id(entry)
             assert entry_clone == entry
+
+    # check applied preprocessing meta
+    _check_applied_preprocessing_meta(
+        sample_pre, pre,
+        keys_to_exist=('clone_key', 'ignore_missing_keys', 'cloned_keys')
+    )
 
 
 @pytest.mark.parametrize('keys_to_clone', (None, ('rgb', 'depth')))
@@ -113,6 +134,13 @@ def test_flatcloneentries(keys_to_clone, prefix_and_suffix):
             assert id(entry_clone) != id(entry)
             assert entry_clone == entry
 
+    # check applied preprocessing meta
+    _check_applied_preprocessing_meta(
+        sample_pre, pre,
+        keys_to_exist=('key_prefix', 'key_suffix', 'ignore_missing_keys',
+                       'added_keys')
+    )
+
 
 def test_instanceclearstuffids():
     """Test InstanceClearStuffIDs"""
@@ -136,7 +164,13 @@ def test_instanceclearstuffids():
     # some simple checks
     assert 'instance' in sample_pre
 
-    show_results(sample, sample_pre, f'InstanceClearStuffIDs')
+    # check applied preprocessing meta
+    _check_applied_preprocessing_meta(
+        sample_pre, pre,
+        keys_to_exist=('stuff_semantic_classes', 'cleared_instance_pixels')
+    )
+
+    show_results(sample, sample_pre, 'InstanceClearStuffIDs')
 
 
 def test_instancetargetgenerator():
@@ -169,23 +203,43 @@ def test_instancetargetgenerator():
     # more checks are quite complicated, you should consider visual inspection
     # first
 
-    show_results(sample, sample_pre, f'InstanceTargetGenerator')
+    # check applied preprocessing meta
+    _check_applied_preprocessing_meta(
+        sample_pre, pre,
+        keys_to_exist=('sigma_for_downscales',
+                       'thing_semantic_classes', 'stuff_semantic_classes',
+                       'normalized_offset',
+                       'encoded_instances', 'skipped_instances_due_to_stuff')
+    )
+
+    show_results(sample, sample_pre, 'InstanceTargetGenerator')
 
 
 @pytest.mark.parametrize('downscales', ((2,), (4, 8), (8, 16, 32)))
 def test_multiscale(downscales):
     """Test MultiscaleSupervisionGenerator"""
-    pre = MultiscaleSupervisionGenerator(
+    pre_1 = MultiscaleSupervisionGenerator(
         downscales=downscales,
         keys=('instance', 'semantic', 'orientations')
     )
+    pre_2 = SemanticClassMapper(
+        classes_to_map=(1, 10),    # see get_dummy_samples
+        new_label=0,
+        multiscale_processing=True,
+        disable_stats=False
+    )
+    pre = tv_trans.Compose([pre_1, pre_2])
 
     # apply augmentation
     sample = get_dummy_sample()
     sample_pre = pre(deepcopy(sample))
 
+    # defined at second place
+    downscale_fmt = '_down_{}'
+
+    # some simple checks
     for ds in downscales:
-        ms_key = f'_down_{ds}'
+        ms_key = downscale_fmt.format(ds)
 
         assert ms_key in sample_pre
 
@@ -195,6 +249,16 @@ def test_multiscale(downscales):
 
         for key in _get_relevant_spatial_keys(ms_sample):
             assert ms_sample[key].shape[0] == int(sample[key].shape[0] / ds)
+
+    # check applied preprocessing meta
+    _check_applied_preprocessing_meta(
+        sample_pre, pre_1,
+        keys_to_exist=('downscales', 'keys', 'shapes')
+    )
+    _check_applied_preprocessing_meta(
+        sample_pre, pre_2,
+        keys_to_exist=[downscale_fmt.format(ds) for ds in downscales]
+    )
 
     show_results(sample, sample_pre,
                  f'MultiscaleSupervisionGenerator: scales: {downscales}')
@@ -226,10 +290,15 @@ def test_orientationtargetgenerator():
     for id_ in valid_instance_ids:
         o_id_rad = np_biternion2rad(o[i == id_])
         deg_rad = sample['orientations'][id_]
-        assert (o_id_rad == deg_rad).all()
+        assert np.allclose(o_id_rad, deg_rad)
 
-    show_results(sample, sample_pre,
-                 f'OrientationTargetGenerator')
+    # check applied preprocessing meta
+    _check_applied_preprocessing_meta(
+        sample_pre, pre,
+        keys_to_exist=('semantic_classes',)
+    )
+
+    show_results(sample, sample_pre, 'OrientationTargetGenerator')
 
 
 def test_normalize_rgb():
@@ -247,15 +316,20 @@ def test_normalize_rgb():
     # some simple checks
     assert sample_pre['rgb'].dtype == dtype
 
-    show_results(sample, sample_pre,
-                 f'NormalizeRGB')
-
-    # check rgb
+    # check rgb values
     for c_idx in range(3):
         c = sample['rgb'][..., c_idx]
         c_pre = sample_pre['rgb'][..., c_idx]
         c_ref = (c.astype(dtype) - rgb_mean[c_idx]) / rgb_std[c_idx]
         assert np.equal(c_pre, c_ref).all()
+
+    # check applied preprocessing meta
+    _check_applied_preprocessing_meta(
+        sample_pre, pre,
+        keys_to_exist=('rgb_mean', 'rgb_std', 'output_dtype')
+    )
+
+    show_results(sample, sample_pre, 'NormalizeRGB')
 
 
 @pytest.mark.parametrize('raw_depth', (False, True))
@@ -264,11 +338,13 @@ def test_normalize_depth(raw_depth):
     dtype = 'float32'
     depth_mean = np.array(2022.2202, dtype=dtype)
     depth_std = np.array(123.321, dtype=dtype)
+    invalid_depth_value = 0.0
 
     pre = NormalizeDepth(
         depth_mean=depth_mean,
         depth_std=depth_std,
         raw_depth=raw_depth,
+        invalid_depth_value=invalid_depth_value,
         output_dtype=dtype
     )
 
@@ -279,23 +355,34 @@ def test_normalize_depth(raw_depth):
     # some simple checks
     assert sample_pre['depth'].dtype == dtype
 
-    show_results(sample, sample_pre,
-                 f'NormalizeDepth: raw_depth: {raw_depth}, {dtype}')
-
-    # check depth
+    # check depth values
     depth = sample['depth']
     depth_pre = sample_pre['depth']
-    mask = depth != 0 if raw_depth else slice(None)
+    mask = depth != invalid_depth_value if raw_depth else slice(None)
     depth_ref = depth.astype(dtype)
     depth_ref[mask] = (depth_ref[mask] - depth_mean) / depth_std
     assert np.equal(depth_pre, depth_ref).all()
+
+    # check applied preprocessing meta
+    _check_applied_preprocessing_meta(
+        sample_pre, pre,
+        keys_to_exist=('depth_mean', 'depth_std', 'raw_depth',
+                       'invalid_depth_value', 'output_dtype')
+    )
+
+    show_results(sample, sample_pre,
+                 f'NormalizeDepth: raw_depth: {raw_depth}, {dtype}')
 
 
 @pytest.mark.parametrize('height', (100, 200, 1000))
 @pytest.mark.parametrize('width', (100, 200, 1000))
 def test_resize(height, width):
     """Test Resize"""
-    pre = Resize(height=height, width=width)
+    pre = Resize(
+        height=height,
+        width=width,
+        keep_aspect_ratio=False
+    )
 
     # apply augmentation
     sample = get_dummy_sample()
@@ -315,12 +402,65 @@ def test_resize(height, width):
     assert np.equal(sample_pre['depth'],
                     cv2.resize(sample['depth'], (width, height),
                                interpolation=cv2.INTER_NEAREST)).all()
+    assert np.equal(sample_pre['semantic'],
+                    cv2.resize(sample['semantic'], (width, height),
+                               interpolation=cv2.INTER_NEAREST)).all()
+    assert np.equal(sample_pre['instance'],
+                    cv2.resize(sample['instance'], (width, height),
+                               interpolation=cv2.INTER_NEAREST)).all()
     assert np.equal(sample_pre['some_mask'],
                     cv2.resize(sample['some_mask'].astype('uint8'),
                                (width, height),
                                interpolation=cv2.INTER_NEAREST) > 0).all()
 
+    # check applied preprocessing meta
+    _check_applied_preprocessing_meta(
+        sample_pre, pre,
+        keys_to_exist=('keys_to_ignore',
+                       'old_height', 'old_width', 'new_height', 'new_width',
+                       'valid_region_slice_y', 'valid_region_slice_x')
+    )
+
     show_results(sample, sample_pre, f'Resize: h: {height}, w: {width}')
+
+
+@pytest.mark.parametrize('height_width', ((100, 50), (50, 100), (100, 100)))
+@pytest.mark.parametrize('padding_mode', ('zero', 'reflect'))
+def test_resize_keep_aspect_ratio(height_width, padding_mode):
+    """Test Resize with keep_aspect_ratio=True"""
+    height, width = height_width
+    pre = Resize(
+        height=height,
+        width=width,
+        keep_aspect_ratio=True,
+        padding_mode=padding_mode
+    )
+
+    # apply augmentation
+    sample = get_dummy_sample()
+    sample_pre = pre(deepcopy(sample))
+
+    # some simple checks
+    assert sample_pre['rgb'].dtype == sample['rgb'].dtype
+    assert sample_pre['depth'].dtype == sample['depth'].dtype
+    assert sample_pre['some_mask'].dtype == sample['some_mask'].dtype
+    assert sample_pre['rgb'].shape == (height, width, 3)
+    assert sample_pre['depth'].shape == (height, width)
+    assert sample_pre['some_mask'].shape == (height, width)
+    # check interpolation (done in test_resize)
+
+    # TODO: add some meaningful checks
+
+    # check applied preprocessing meta
+    _check_applied_preprocessing_meta(
+        sample_pre, pre,
+        keys_to_exist=('keys_to_ignore',
+                       'old_height', 'old_width', 'new_height', 'new_width',
+                       'valid_region_slice_y', 'valid_region_slice_x')
+    )
+
+    show_results(sample, sample_pre,
+                 f'Resize while keeping aspect ratio: h: {height}, w: {width}', True)
 
 
 @pytest.mark.parametrize('random_input', (False, True))
@@ -341,22 +481,33 @@ def test_resize_uint32(random_input):
     # prepare sample
     if not random_input:
         sample = get_dummy_sample()
-        semantic = sample['semantic']
-        instance = sample['instance']
     else:
+        h_w = (12, 13)
         semantic = np.random.randint(
             low=0, high=np.iinfo('uint16').max + 1,
-            size=(12, 13),
+            size=h_w,
             dtype='uint16'
         )
         instance = np.random.randint(
             low=0, high=np.iinfo('uint16').max + 1,
-            size=(12, 13),
+            size=h_w,
             dtype='uint16'
         )
+        rgb = np.random.randint(0, 255 + 1, (*h_w, 3), dtype='uint8')
+        sample = {
+            'rgb': rgb,   # required for shape stuff
+            'semantic': semantic,
+            'instance': instance
+        }
+
+    # shorter names
+    semantic = sample['semantic']
+    instance = sample['instance']
+
+    # prepare panoptic key
     shift = 2**16
     panoptic = semantic.astype('uint32') * shift + instance
-    sample = {'panoptic': panoptic}
+    sample['panoptic'] = panoptic
 
     # apply preprocessor
     sample_pre = pre(deepcopy(sample))
@@ -378,7 +529,10 @@ def test_resize_uint32(random_input):
         np.unique(sample_pre['panoptic'] % shift),
         np.unique(instance)
     )
-    show_results(sample, sample_pre, f'Resize with uint32 input')
+
+    # check applied preprocessing meta (done in test_resize)
+
+    show_results(sample, sample_pre, 'Resize with uint32 input')
 
 
 @pytest.mark.parametrize('min_scale', (0.8, 1.0))
@@ -400,25 +554,47 @@ def test_randomresize(min_scale, max_scale):
     shape = sample_pre['rgb'].shape[:2]
     assert sample_pre['depth'].shape == sample_pre['some_mask'].shape == shape
 
+    # check applied preprocessing meta
+    _check_applied_preprocessing_meta(
+        sample_pre, pre,
+        keys_to_exist=('min_scale', 'max_scale', 'keys_to_ignore',
+                       'old_height', 'old_width', 'new_height', 'new_width',
+                       'valid_region_slice_y', 'valid_region_slice_x')
+    )
+
     show_results(sample, sample_pre,
                  f'RandomResize: min: {min_scale}, max: {max_scale}')
 
 
 @pytest.mark.parametrize('crop_height', (100, 200, 1000))
-@pytest.mark.parametrize('crop_width', (100, 200, 1000))
+@pytest.mark.parametrize('crop_width', (100, 200, 1200))
 def test_randomcrop(crop_height, crop_width):
     """Test RandomCrop"""
     pre = RandomCrop(crop_height=crop_height,
                      crop_width=crop_width)
 
     # apply augmentation
-    sample = get_dummy_sample()
+    sample = get_dummy_sample()  # shape: 256x256x3
     sample_pre = pre(deepcopy(sample))
 
     # some simple checks
     assert sample_pre['rgb'].dtype == sample['rgb'].dtype
     shape = sample_pre['rgb'].shape[:2]
     assert sample_pre['depth'].shape == sample_pre['some_mask'].shape == shape
+
+    #
+    if 1000 == crop_height or 1200 == crop_width:
+        # crop is larger than image, should be resized before
+        meta = get_applied_preprocessing_meta(sample_pre)
+        assert meta[0]['was_resized']  # 0 -> first and only preprocessor
+
+    # check applied preprocessing meta
+    _check_applied_preprocessing_meta(
+        sample_pre, pre,
+        keys_to_exist=('crop_height', 'crop_width',
+                       'was_resized', 'resize_height', 'resize_width',
+                       'crop_slice_y', 'crop_slice_x')
+    )
 
     show_results(sample, sample_pre,
                  f'RandomCrop: h: {crop_height}, w: {crop_width}')
@@ -444,6 +620,12 @@ def test_randomhorizontalflip(p):
 
             assert np.deg2rad(angle_ref) == sample_pre['orientations'][id_]
 
+    # check applied preprocessing meta
+    _check_applied_preprocessing_meta(
+        sample_pre, pre,
+        keys_to_exist=('p', 'was_flipped')
+    )
+
     show_results(sample, sample_pre, f'RandomFlip: p: {p}')
 
 
@@ -464,6 +646,14 @@ def test_hsvjitter(hue_jitter, saturation_jitter, value_jitter):
     assert sample_pre['rgb'].dtype == sample['rgb'].dtype
     shape = sample_pre['rgb'].shape[:2]
     assert sample_pre['depth'].shape == sample_pre['some_mask'].shape == shape
+
+    # check applied preprocessing meta
+    _check_applied_preprocessing_meta(
+        sample_pre, pre,
+        keys_to_exist=('hue_limits', 'saturation_limits', 'value_limits',
+                       'applied_hue_offset', 'applied_saturation_offset',
+                       'applied_value_offset')
+    )
 
     show_results(sample, sample_pre,
                  f'RandomHSVJitter: h: {hue_jitter*180}, '
@@ -496,7 +686,8 @@ def test_semanticclassmapper():
     new_label = 0
     pre = SemanticClassMapper(
         classes_to_map=classes_to_map,
-        new_label=new_label
+        new_label=new_label,
+        disable_stats=False
     )
 
     # get sample
@@ -517,7 +708,14 @@ def test_semanticclassmapper():
     mask = np.logical_not(mask_changed)
     assert (sample_pre['semantic'][mask] == sample['semantic'][mask]).all()
 
-    show_results(sample, sample_pre, f'SemanticClassMapper')
+    # check applied preprocessing meta
+    _check_applied_preprocessing_meta(
+        sample_pre, pre,
+        keys_to_exist=('semantic_classes_to_map', 'new_label', 'disable_stats',
+                       'mapped_pixels')
+    )
+
+    show_results(sample, sample_pre, 'SemanticClassMapper')
 
 
 def test_totorchtensors():
@@ -529,7 +727,7 @@ def test_totorchtensors():
 
     # pytorch does not support uint16 as used for depth, we circumvent this by
     # manually casting the depth image to float, in chained processing, this
-    # is usually done by NormalizeRGBAndDepth before
+    # is usually done by NormalizeDepth
     sample['depth'] = sample['depth'].astype('float32')
 
     sample_pre = pre(deepcopy(sample))
@@ -541,28 +739,44 @@ def test_totorchtensors():
             assert sample[k] == v
             continue
 
+        if isinstance(v, AppliedPreprocessingMeta):
+            # skip meta
+            continue
+
         assert isinstance(v, torch.Tensor)
 
+    # check applied preprocessing meta (there are no keys to check)
+    _check_applied_preprocessing_meta(sample_pre, pre)
 
-@pytest.mark.parametrize('interpolation', (InterpolationMode.NEAREST,
-                                           InterpolationMode.BILINEAR))
+
+@pytest.mark.parametrize('interpolation', (tv_trans.InterpolationMode.NEAREST,
+                                           tv_trans.InterpolationMode.BILINEAR))
 def test_torchtransformwrapper(interpolation):
     """Test TorchTransformWrapper"""
-    if interpolation == InterpolationMode.BILINEAR:
+
+    # only works for nearest interpolation
+    if interpolation == tv_trans.InterpolationMode.BILINEAR:
         pytest.xfail('should not work for bilinear interpolation')
-    pre = torchvision.transforms.Compose([
-        TorchTransformWrapper(torchvision.transforms.RandomResizedCrop(
-            10, interpolation=interpolation)),
-        TorchTransformWrapper(torchvision.transforms.TenCrop(5))
-    ])
 
-    rgb = torch.arange(0, 256, dtype=torch.float64).reshape(1, 16, 16).repeat(3, 1, 1)
-    depth = rgb[0, ...].unsqueeze(0).type(torch.float32) * 100
+    # preprocessor that wraps multiple transforms
+    pre = TorchTransformWrapper(
+        tv_trans.Compose([
+            tv_trans.RandomResizedCrop(10, interpolation=interpolation),
+            tv_trans.TenCrop(5)
+        ])
+    )
 
+    # prepare sample
+    h_w = (16, 16)
+    dtype = torch.float32
+    rgb = torch.arange(0, 256, dtype=dtype).reshape(1, *h_w).repeat(3, 1, 1)
+    depth = rgb[0, ...].unsqueeze(0) * 100
     sample = {'rgb': rgb, 'depth': depth}
 
+    # apply preprocessing
     sample_pre = pre(deepcopy(sample))
 
+    # some simple checks
     assert sample_pre['rgb'].shape == (10, 3, 5, 5)
     assert sample_pre['depth'].shape == (10, 1, 5, 5)
     assert sample_pre['rgb'].dtype == sample['rgb'].dtype
@@ -572,21 +786,32 @@ def test_torchtransformwrapper(interpolation):
         sample_pre['depth'].type(sample_pre['rgb'].dtype) / 100
     )
 
+    # check applied preprocessing meta
+    _check_applied_preprocessing_meta(
+        sample_pre, pre,
+        keys_to_exist=('transform_obj', 'keys')
+    )
 
-def test_qualitative_torchtransform_wrapper():
+
+def test_torchtransformwrapper_qualitative():
     # second just qualitative test with real images
-    class ToFloat:
+
+    class EnsureFloat:
         def __call__(self, sample):
             for key in _get_relevant_spatial_keys(sample):
                 sample[key] = sample[key].astype(np.float32)
             return sample
 
-    pre = torchvision.transforms.Compose([
-        ToFloat(),
+    pre = tv_trans.Compose([
+        EnsureFloat(),
         ToTorchTensors(),
-        TorchTransformWrapper(torchvision.transforms.RandomResizedCrop(
-            300, interpolation=InterpolationMode.NEAREST)),
-        TorchTransformWrapper(torchvision.transforms.TenCrop(250))
+        # wrap two single transforms
+        TorchTransformWrapper(
+            tv_trans.RandomResizedCrop(
+                300, interpolation=tv_trans.InterpolationMode.NEAREST
+            )
+        ),
+        TorchTransformWrapper(tv_trans.FiveCrop(150))
     ])
 
     dataset = get_dataset(
@@ -595,14 +820,62 @@ def test_qualitative_torchtransform_wrapper():
         sample_keys=('rgb', 'depth')
     )
 
-    for i in range(5):
+    crop_order = ('top_left', 'top_right', 'bottom_left', 'bottom_right',
+                  'center')
+    for i in range(3):  # first 3 samples
         sample = dataset[i]
         sample_pre = pre(deepcopy(sample))
 
-        for crop_rgb, crop_depth in zip(sample_pre['rgb'], sample_pre['depth']):
+        for crop_rgb, crop_depth, crop_pos in zip(sample_pre['rgb'],
+                                                  sample_pre['depth'],
+                                                  crop_order):
             crop_rgb = crop_rgb.numpy().transpose(1, 2, 0).astype(np.uint8)
             crop_depth = crop_depth.numpy().transpose(1, 2, 0).astype(np.uint16)
             show_results(
-                sample,
-                {'rgb': crop_rgb, 'depth': crop_depth},
-                'TorchTransformWrapper with rgb and depth')
+                sample, {'rgb': crop_rgb, 'depth': crop_depth},
+                f'TorchTransformWrapper sample {i} (rgb & depth) - {crop_pos}')
+
+
+@pytest.mark.parametrize('min_max', ((0.0, 1.0), (-1.0, 1.0)))
+@pytest.mark.parametrize('raw_depth', (False, True))
+def test_scale_depth(min_max, raw_depth):
+    """Test ScaleDepth"""
+    dtype = 'float32'
+    new_min, new_max = min_max
+    invalid_depth_value = 0.0
+
+    pre = ScaleDepth(
+        new_min=new_min,
+        new_max=new_max,
+        raw_depth=raw_depth,
+        invalid_depth_value=invalid_depth_value,
+        output_dtype=dtype
+    )
+
+    # apply augmentation
+    sample = get_dummy_sample()
+    sample_pre = pre(deepcopy(sample))
+
+    # some simple checks
+    assert sample_pre['depth'].dtype == dtype
+
+    # check depth values
+    depth = sample['depth']
+    depth_pre = sample_pre['depth']
+    mask_valid = depth != invalid_depth_value if raw_depth else slice(None)
+    depth_pre[mask_valid].min() == new_min
+    depth_pre[mask_valid].max() == new_max
+    if raw_depth:
+        raw_depth_mask = depth == invalid_depth_value
+        assert (depth_pre[raw_depth_mask] == invalid_depth_value).all()
+
+    # check applied preprocessing meta
+    _check_applied_preprocessing_meta(
+        sample_pre, pre,
+        keys_to_exist=('new_min', 'new_max', 'raw_depth',
+                       'invalid_depth_value', 'output_dtype')
+    )
+
+    show_results(sample, sample_pre,
+                 f'ScaleDepth: min_max: {min_max}, raw_depth: {raw_depth}, '
+                 f'{dtype}')

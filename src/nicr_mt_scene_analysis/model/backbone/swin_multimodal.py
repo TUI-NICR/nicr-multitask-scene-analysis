@@ -2,7 +2,7 @@
 """
 .. codeauthor:: Soehnke Fischedick <soehnke-benedikt.fischedick@tu-ilmenau.de>
 """
-from typing import Any, Callable, List, Type, Dict
+from typing import Any, List, Type, Dict
 
 import warnings
 

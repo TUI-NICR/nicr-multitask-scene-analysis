@@ -10,13 +10,15 @@ from .normal import NormalPostprocessing
 from .panoptic import PanopticPostprocessing
 from .scene import ScenePostprocessing
 from .semantic import SemanticPostprocessing
+from .dense_visual_embedding import DenseVisualEmbeddingPostprocessing
 
 
 PostProcessingType = Type[Union[InstancePostprocessing,
                                 NormalPostprocessing,
                                 PanopticPostprocessing,
                                 ScenePostprocessing,
-                                SemanticPostprocessing]]
+                                SemanticPostprocessing,
+                                DenseVisualEmbeddingPostprocessing]]
 
 
 def get_postprocessing_class(
@@ -26,6 +28,8 @@ def get_postprocessing_class(
 
     if 'semantic' == name:
         cls = SemanticPostprocessing
+    elif 'dense-visual-embedding' == name:
+        cls = DenseVisualEmbeddingPostprocessing
     elif 'instance' == name:
         cls = InstancePostprocessing
     elif 'panoptic' == name:

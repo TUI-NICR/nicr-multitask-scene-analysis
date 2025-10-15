@@ -4,6 +4,7 @@
 """
 from typing import Any, Dict
 
+import atexit
 import csv
 import os
 
@@ -22,6 +23,9 @@ class CSVLogger:
                 self._rows = list(csv_reader)
         else:
             self._rows = []
+
+        # Register write method to be called at program exit
+        atexit.register(self.write)
 
     def write(self) -> None:
         # determine keys
@@ -54,7 +58,3 @@ class CSVLogger:
         # write csv file
         if 0 == (len(self._rows)-1) % self._write_interval:
             self.write()
-
-    def __del__(self):
-        # avoid data loss
-        self.write()

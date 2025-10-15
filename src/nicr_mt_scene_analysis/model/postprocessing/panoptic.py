@@ -9,7 +9,7 @@ import torch
 import numpy as np
 
 from ...data.preprocessing.resize import get_fullres_key
-from ...data.preprocessing.resize import get_fullres_shape
+from ...data.preprocessing.resize import get_valid_region_slices_and_fullres_shape
 from ...types import BatchType
 from ...types import DecoderRawOutputType
 from ...types import PostprocessingOutputType
@@ -239,46 +239,54 @@ class PanopticPostprocessing(DensePostprocessingBase):
             r_dict['panoptic_segmentation_deeplab_panoptic_score'] = pan_seg_panoptic_score
 
         # resize output to original shape (assume same shape for all samples)
-        shape = get_fullres_shape(batch, 'instance')
+        crop_slices, resize_shape = get_valid_region_slices_and_fullres_shape(
+            batch, 'instance'
+        )
 
         r_dict[get_fullres_key('panoptic_segmentation_deeplab')] = \
-            self._resize_prediction(
+            self._crop_to_valid_region_and_resize_prediction(
                 panoptic_seg,
-                shape=shape,
+                valid_region_slices=crop_slices,
+                shape=resize_shape,
                 mode='nearest'
             )
 
         r_dict[get_fullres_key('panoptic_segmentation_deeplab_instance_idx')] = \
-            self._resize_prediction(
+            self._crop_to_valid_region_and_resize_prediction(
                 r_dict['panoptic_segmentation_deeplab_instance_idx'],
-                shape=shape,
+                valid_region_slices=crop_slices,
+                shape=resize_shape,
                 mode='nearest'
             )
 
         r_dict[get_fullres_key('panoptic_segmentation_deeplab_semantic_idx')] = \
-            self._resize_prediction(
+            self._crop_to_valid_region_and_resize_prediction(
                 r_dict['panoptic_segmentation_deeplab_semantic_idx'],
-                shape=shape,
+                valid_region_slices=crop_slices,
+                shape=resize_shape,
                 mode='nearest'
             )
 
         if self._compute_scores:
             r_dict[get_fullres_key('panoptic_segmentation_deeplab_semantic_score')] = \
-                self._resize_prediction(
+                self._crop_to_valid_region_and_resize_prediction(
                     pan_seg_semantic_score,
-                    shape=shape,
+                    valid_region_slices=crop_slices,
+                    shape=resize_shape,
                     mode='nearest'
                 )
             r_dict[get_fullres_key('panoptic_segmentation_deeplab_instance_score')] = \
-                self._resize_prediction(
+                self._crop_to_valid_region_and_resize_prediction(
                     pan_seg_instance_score,
-                    shape=shape,
+                    valid_region_slices=crop_slices,
+                    shape=resize_shape,
                     mode='nearest'
                 )
             r_dict[get_fullres_key('panoptic_segmentation_deeplab_panoptic_score')] = \
-                self._resize_prediction(
+                self._crop_to_valid_region_and_resize_prediction(
                     pan_seg_panoptic_score,
-                    shape=shape,
+                    valid_region_slices=crop_slices,
+                    shape=resize_shape,
                     mode='nearest'
                 )
 

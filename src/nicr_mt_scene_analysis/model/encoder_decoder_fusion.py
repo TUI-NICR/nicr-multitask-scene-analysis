@@ -188,7 +188,7 @@ def get_encoder_decoder_fusion_class(
         # decoder)
         kwargs['fuse_operation'] = lambda x_enc, x_dec: x_enc
     else:
-        raise ValueError(f"Unknown encoder decoder fusion operation.")
+        raise ValueError("Unknown encoder decoder fusion operation.")
 
     # determine which features to fuse
     if 'rgb' in name:

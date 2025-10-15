@@ -26,21 +26,25 @@ class MeanIntersectionOverUnion(Metric):
 
         # determine dtype for bincounting later on
         n_classes_squared = n_classes**2
+
+        # torchmetrics seems to overwrite _dtype even after the constructor
+        # was called, to avoid issues we use the name _input_cast_dtype
+        # instead.
         if n_classes_squared < 2**(8-1)-1:
-            self._dtype = torch.int8
+            self._input_cast_dtype = torch.int8
         elif n_classes_squared < 2**(16-1)-1:
-            self._dtype = torch.int16
+            self._input_cast_dtype = torch.int16
         else:
             # it does not matter in our tests
-            self._dtype = torch.int64    # equal to long
+            self._input_cast_dtype = torch.int64    # equal to long
 
         self._n_classes = n_classes
         self._ignore_first_class = ignore_first_class
 
     def update(self, preds: torch.Tensor, target: torch.Tensor) -> None:
         # convert dtype to speed up bincounting
-        preds_ = preds.to(self._dtype)
-        target_ = target.to(self._dtype)
+        preds_ = preds.to(self._input_cast_dtype)
+        target_ = target.to(self._input_cast_dtype)
 
         # compute confusion matrix
         unique_mapping = (target_.view(-1) * self._n_classes + preds_.view(-1))

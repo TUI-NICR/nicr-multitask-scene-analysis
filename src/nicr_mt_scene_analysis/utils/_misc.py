@@ -3,8 +3,6 @@
 .. codeauthor:: Daniel Seichter <daniel.seichter@tu-ilmenau.de>
 .. codeauthor:: Soehnke Fischedick <soehnke-benedikt.fischedick@tu-ilmenau.de>
 """
-import sys
-import os
 from functools import partialmethod
 
 from functools import lru_cache

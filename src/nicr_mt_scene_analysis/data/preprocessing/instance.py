@@ -12,24 +12,45 @@ import numpy as np
 
 from ...types import BatchType
 from ...data.preprocessing.resize import get_fullres
-from .multiscale_supervision import _enable_multiscale
+from .base import PreprocessingBase
 from .utils import _keys_available
 
 
-class InstanceClearStuffIDs:
+class InstanceClearStuffIDs(PreprocessingBase):
     def __init__(
         self,
-        semantic_classes_is_thing: Tuple[bool],    # with void
+        semantic_classes_is_thing: Union[None, Tuple[bool]] = None,  # with void
+        use_is_thing_from_meta: bool = False,  # requires *-dataset package version >= 0.8.1
+        multiscale_processing: bool = True,
+        disable_stats: bool = False  # might slightly speed up preprocessing
     ) -> None:
-        # get stuff class ids without void
-        semantic_classes_is_stuff = np.logical_not(semantic_classes_is_thing)
-        self._stuff_class_ids = np.where(semantic_classes_is_stuff)[0]
-        self._stuff_class_ids = self._stuff_class_ids    # including void
+        self._stuff_class_ids = None
+        # deprecated as it should be preferred to use the meta info
+        if semantic_classes_is_thing is not None:
+            assert not use_is_thing_from_meta
+            semantic_classes_is_stuff = np.logical_not(semantic_classes_is_thing)
+            self._stuff_class_ids = np.where(semantic_classes_is_stuff)[0]  # including void
+        self._disable_stats = disable_stats
 
-    def __call__(self, sample: BatchType) -> BatchType:
+        # store if is_thing list meta of batch should be used
+        self._use_is_thing_from_meta = use_is_thing_from_meta
+        assert not (self._use_is_thing_from_meta and self._stuff_class_ids is not None)
+        super().__init__(
+            fixed_parameters={
+                'use_is_thing_from_meta': self._use_is_thing_from_meta,
+                'disable_stats': self._disable_stats
+            },
+            multiscale_processing=multiscale_processing
+        )
+
+    def _preprocess(
+        self,
+        sample: BatchType,
+        **kwargs
+    ) -> Tuple[BatchType, Dict[str, Any]]:
         if not _keys_available(sample, ('instance', 'semantic')):
             # might be an inference call
-            return sample
+            return sample, {}
 
         # depending on the dataset and the applied division into stuff and
         # thing classes, the data may contain valid ids for instances of stuff
@@ -41,22 +62,47 @@ class InstanceClearStuffIDs:
         # ensure that this requirement also applies to the full resolution
         # images that may be used for determining evaluation metrics
 
+        # determine stuff class ids.
+        stuff_class_ids = None
+        if self._stuff_class_ids is not None:
+            stuff_class_ids = self._stuff_class_ids
+        elif self._use_is_thing_from_meta:
+            semantic_classes_is_thing = sample['meta']['semantic_label_list'].classes_is_thing
+            semantic_classes_is_stuff = np.logical_not(semantic_classes_is_thing)
+            stuff_class_ids = np.where(semantic_classes_is_stuff)[0]  # including void
+
         # get mask of stuff classes
-        stuff_mask = np.isin(sample['semantic'], self._stuff_class_ids)
+        stuff_mask = np.isin(sample['semantic'], stuff_class_ids)
+
+        # opt. determine mapping stats
+        if not self._disable_stats:
+            # add stats to sample
+            classes, cnts = np.unique(sample['instance'][stuff_mask],
+                                      return_counts=True)
+            dynamic_parameters = {
+                'cleared_instance_pixels': dict(zip(classes, cnts)),
+                'stuff_semantic_classes': stuff_class_ids
+            }
+        else:
+            dynamic_parameters = {
+                'stuff_semantic_classes': stuff_class_ids
+            }
 
         # force id=0 inplace
         sample['instance'][stuff_mask] = 0
 
-        return sample
+        return sample, dynamic_parameters
 
 
-class InstanceTargetGenerator:
+class InstanceTargetGenerator(PreprocessingBase):
     def __init__(
         self,
         sigma: int,
         semantic_classes_is_thing: Union[Tuple[bool], None] = None,  # with void
+        use_is_thing_from_meta: bool = False,  # requires *-dataset package version >= 0.8.1
         sigma_for_additional_downscales: Union[Dict[int, int], None] = None,
-        normalized_offset: bool = True
+        normalized_offset: bool = True,
+        multiscale_processing: bool = False,
     ) -> None:
         self._sigma_for_downscales = {None: sigma}
         if sigma_for_additional_downscales is not None:
@@ -70,7 +116,9 @@ class InstanceTargetGenerator:
         }
         self._mesh_grid_for_downscale = {}    # created lazily later
 
+        # deprecated as it should be preferred to use the meta info
         if semantic_classes_is_thing is not None:
+            assert not use_is_thing_from_meta
             # convert list of booleans to list of thing class indices
             self._thing_class_ids = np.where(semantic_classes_is_thing)[0]
             semantic_classes_is_stuff = np.logical_not(semantic_classes_is_thing)
@@ -79,8 +127,18 @@ class InstanceTargetGenerator:
         else:
             self._thing_class_ids = None
             self._stuff_class_ids = None
+        self._use_is_thing_from_meta = use_is_thing_from_meta
 
         self._normalized_offset = normalized_offset
+
+        super().__init__(
+            fixed_parameters={
+                'sigma_for_downscales': self._sigma_for_downscales,
+                'normalized_offset': self._normalized_offset,
+                'use_is_thing_from_meta': self._use_is_thing_from_meta
+            },
+            multiscale_processing=sigma_for_additional_downscales is not None
+        )
 
     @staticmethod
     def _precompute_2d_gauss(sigma):
@@ -91,17 +149,16 @@ class InstanceTargetGenerator:
 
         return np.exp(- ((x - x0) ** 2 + (y - y0) ** 2) / (2 * sigma ** 2))
 
-    @_enable_multiscale
-    def __call__(
+    def _preprocess(
         self,
         sample: BatchType,
         downscale=None,
-        **kwargs: Any
-    ) -> BatchType:
+        **kwargs
+    ) -> Tuple[BatchType, Dict[str, Any]]:
         if 'instance' not in sample:
             # might be a multiscale call with disabled multiscale for instances
             # or inference
-            return sample
+            return sample, {}
 
         # extract shape and instance image
         instance_image = sample['instance']
@@ -122,6 +179,18 @@ class InstanceTargetGenerator:
         center_img = np.zeros((height, width), dtype='float32')
         offset_img = np.zeros((height, width, 2), dtype='int16')
 
+        # stats
+        encoded_instances = []
+        skipped_instances_due_to_stuff = []
+
+        thing_class_ids = self._thing_class_ids
+        stuff_class_ids = self._stuff_class_ids
+        if self._use_is_thing_from_meta:
+            semantic_classes_is_thing = np.array(sample['meta']['semantic_label_list'].classes_is_thing)
+            semantic_classes_is_stuff = np.logical_not(semantic_classes_is_thing)
+            thing_class_ids = np.where(semantic_classes_is_thing)[0]  # including void
+            stuff_class_ids = np.where(semantic_classes_is_stuff)[0][1:]  # remove void
+
         for instance_id in np.unique(instance_image):
             if 0 == instance_id:
                 # 0 indicates no instance -> skip
@@ -130,19 +199,23 @@ class InstanceTargetGenerator:
             # get mask for instance
             mask_indices = np.where(instance_image == instance_id)
 
-            # check semantic label of instance
-            # note, we use mode of all relevant pixels as the pixels may have
-            # different labels due to instance merging from 3d boxes
-            if self._thing_class_ids is not None:
-                # As the bincount always starts with 0, the argmax will always
+            # check semantic label of instance,
+            # note, we use the mode of all relevant pixels as the pixels may
+            # have different labels due to the annotation process or instance
+            # merging from 3d boxes
+            if thing_class_ids is not None:
+                # as the bincount always starts with 0, the argmax will always
                 # return the class id of the most frequent class of the
-                # semantic labels.
+                # semantic labels
                 semantic_class = np.bincount(
                     sample['semantic'][mask_indices]
                 ).argmax()
-                if semantic_class not in self._thing_class_ids:
-                    # we are not interested in this class
+                if semantic_class not in thing_class_ids:
+                    # it is not a thing class, skip this instance
+                    skipped_instances_due_to_stuff.append(instance_id)
                     continue
+
+            encoded_instances.append(instance_id)
 
             # add instance to foreground
             foreground[mask_indices] = True
@@ -187,22 +260,27 @@ class InstanceTargetGenerator:
         sample['instance_foreground'] = foreground
 
         # force that all stuff classes have instance id 0 (0 = no instance)
-        # if you face an assert here, consider adding InstanceClearStuffIDs
+        # if you face an assert here, consider adding InstanceClearStuffIDs to
+        # your preprocessing chain
         assert (instance_image[~foreground] == 0).all()
         instance_fullres = get_fullres(sample, 'instance')
         if instance_fullres is not None:
             semantic_fullres = get_fullres(sample, 'semantic')
             instance_foreground = np.isin(semantic_fullres,
-                                          self._thing_class_ids)
+                                          thing_class_ids)
             assert (instance_fullres[~instance_foreground] == 0).all()
 
         # create separate mask for instance centers
         sample['instance_center_mask'] = sample['instance_foreground'].copy()
-        if self._stuff_class_ids is not None:
+        if stuff_class_ids is not None:
             # we have semantic information, adapt mask for instance centers
             # such that predicted centers in stuff regions are penalized
-            stuff_foreground = np.isin(sample['semantic'],
-                                       self._stuff_class_ids)
+            stuff_foreground = np.isin(sample['semantic'], stuff_class_ids)
             sample['instance_center_mask'][stuff_foreground] = True
 
-        return sample
+        return sample, {
+            'encoded_instances': encoded_instances,
+            'skipped_instances_due_to_stuff': skipped_instances_due_to_stuff,
+            'thing_semantic_classes': thing_class_ids,
+            'stuff_semantic_classes': stuff_class_ids
+        }

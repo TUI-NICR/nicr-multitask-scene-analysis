@@ -1,0 +1,70 @@
+# build system -----------------------------------------------------------------
+[build-system]
+build-backend = "setuptools.build_meta"
+requires = [
+    "setuptools>=61.0",
+    "wheel",
+]
+
+# project metadata -------------------------------------------------------------
+[project]
+name = "nicr-mt-scene-analysis"
+description = "Python package for multi-task scene analysis"
+authors = [
+    { name = "Daniel Seichter", email = "daniel.seichter@tu-ilmenau.de" },
+    { name = "Soehnke Fischedick", email = "soehnke.fischedick@tu-ilmenau.de" },
+]
+license = { file = "LICENSE" }
+readme = "README.md"
+requires-python = ">=3.8"
+dynamic = [ "version", "dependencies", "optional-dependencies" ]
+
+[project.urls]
+Homepage = "https://www.tu-ilmenau.de/neurob"
+Repository = "https://github.com/TUI-NICR/nicr-multitask-scene-analysis"
+
+# package configuration  -------------------------------------------------------
+[tool.setuptools.packages.find]
+where = ["src"]
+
+# additional package data
+[tool.setuptools.package-data]
+nicr_mt_scene_analysis = [
+    "visualization/FreeMonoBold.ttf",
+]
+
+# version and dependencies
+[tool.setuptools.dynamic]
+version = { attr = "nicr_mt_scene_analysis.version.__version__" }
+dependencies = { file = [
+    "requirements/base.txt"
+] }
+optional-dependencies.test = { file = [
+    "requirements/test.txt"
+] }
+optional-dependencies.withopencv = { file = [
+    "requirements/opencv.txt"
+] }
+optional-dependencies.withtorch = { file = [
+    "requirements/torch.txt"
+] }
+
+# linting ----------------------------------------------------------------------
+[tool.ruff]
+[tool.ruff.lint]
+ignore = [
+    # E501 line too long (82 > 79 characters)
+    "E501",
+    # E402 module level import not at top of file
+    "E402",
+    # E731 do not assign a lambda expression, use a def
+    "E731",
+    # [not implemented in ruff] line breaks W503 vs. W504
+    # "W504"
+]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = [
+    # allow unused imports in __init__.py files
+    "F401"
+]

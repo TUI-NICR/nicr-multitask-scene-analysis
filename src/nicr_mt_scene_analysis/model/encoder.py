@@ -6,10 +6,8 @@
 from typing import Optional, Sequence, Tuple, Type, Union
 
 import abc
-from collections import defaultdict
 from itertools import compress
 
-import torch
 from torch import nn
 
 from ..types import EncoderInputType
@@ -119,7 +117,7 @@ class Encoder(EncoderBase):
         x_ = x[key]
 
         # feature for skip connections
-        decoder_skips_dict = defaultdict(dict)
+        decoder_skips_dict = {}
 
         # forward stages
         downsampling_idx = 0
@@ -137,6 +135,8 @@ class Encoder(EncoderBase):
                 #   EncoderInputType, i.e., with key: modality and value:
                 #   features for this modality
                 cur_downsampling = self.skips_downsamplings[downsampling_idx]
+                if str(cur_downsampling) not in decoder_skips_dict:
+                    decoder_skips_dict[str(cur_downsampling)] = {}
                 decoder_skips_dict[str(cur_downsampling)][key] = x_
                 downsampling_idx += 1
 
@@ -223,7 +223,7 @@ class FusedRGBDEncoder(EncoderBase):
         assert len(x) == 2
 
         # feature for skip connections
-        decoder_skips_dict = defaultdict(dict)
+        decoder_skips_dict = {}
 
         # forward stages
         backbone_rgb = self.backbone_rgb
@@ -252,6 +252,8 @@ class FusedRGBDEncoder(EncoderBase):
                 #   EncoderInputType, i.e., with key: modality and value:
                 #   features for this modality
                 cur_downsampling = self.skips_downsamplings[downsampling_idx]
+                if str(cur_downsampling) not in decoder_skips_dict:
+                    decoder_skips_dict[str(cur_downsampling)] = {}
                 decoder_skips_dict[str(cur_downsampling)]['rgb'] = x_['rgb']
                 decoder_skips_dict[str(cur_downsampling)]['depth'] = x_['depth']
                 downsampling_idx += 1

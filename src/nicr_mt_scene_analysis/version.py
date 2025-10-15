@@ -1,11 +1,12 @@
 # -*- coding: utf-8 -*-
 """
 .. codeauthor:: Daniel Seichter <daniel.seichter@tu-ilmenau.de>
+.. codeauthor:: Soehnke Fischedick <soehnke-benedikt.fischedick@tu-ilmenau.de>
 """
 
 _VERSION_MAJOR = 0
-_VERSION_MINOR = 2
-_VERSION_MICRO = 3
+_VERSION_MINOR = 3
+_VERSION_MICRO = 0
 _VERSION_SUFFIX = ""
 
 

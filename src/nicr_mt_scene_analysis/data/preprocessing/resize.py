@@ -2,12 +2,14 @@
 """
 .. codeauthor:: Daniel Seichter <daniel.seichter@tu-ilmenau.de>
 """
-from typing import Any, Iterable, Optional, Tuple
+from typing import Any, Dict, Iterable, Optional, Tuple
 
 import numpy as np
 import cv2
 
 from ...types import BatchType
+from .base import get_applied_preprocessing_meta
+from .base import PreprocessingBase
 from .utils import _get_input_shape
 from .utils import _get_relevant_spatial_keys
 from .clone import FlatCloneEntries
@@ -45,6 +47,37 @@ def get_fullres_shape(sample: BatchType, key: str) -> Tuple[int, int]:
     raise ValueError(f"Unable to get fullres shape for `{key}`.")
 
 
+def get_valid_region_slices(sample: BatchType) -> Tuple[slice, slice]:
+    # get preprocessing meta
+    meta = get_applied_preprocessing_meta(sample)
+
+    # search for Resize preprocessor
+    # note, all samples share the same original resolution, so using the
+    # first element in batch is fine
+    # TODO: change this?
+    resize_meta = None
+    for pre in meta[0]:
+        if Resize.__name__ == pre['type']:
+            resize_meta = pre
+            break
+
+    if resize_meta is not None:
+        return (
+            resize_meta['valid_region_slice_y'],
+            resize_meta['valid_region_slice_x']
+        )
+
+    # we do not know the slices
+    raise ValueError("Unable to get get valid region slices.")
+
+
+def get_valid_region_slices_and_fullres_shape(
+    sample: BatchType,
+    key: str
+) -> Tuple[Tuple[slice, slice], Tuple[int, int]]:
+    return get_valid_region_slices(sample), get_fullres_shape(sample, key)
+
+
 class FullResCloner(FlatCloneEntries):
     def __init__(
         self,
@@ -71,7 +104,10 @@ def resize(
         [k for k in sample if k.endswith(FULLRES_SUFFIX)]
     )
 
-    for key in _get_relevant_spatial_keys(sample, keys_to_ignore_list):
+    for key in _get_relevant_spatial_keys(
+        sample,
+        keys_to_ignore=keys_to_ignore_list
+    ):
         value = sample[key]
 
         # determine interpolation
@@ -90,8 +126,8 @@ def resize(
 
         # check for uint32 input (OpenCV cannot handle uint32 inputs, however,
         # we use uint32 for the panoptic key)
-        # we circumvent this limitation by viewing the uint32 input as uint8
-        # input, i.e, by converting from single-channel uint32 (grayscale
+        # we circumvent the mentioned limitation by viewing the uint32 input as
+        # uint8 input, i.e, by converting from single-channel uint32 (grayscale
         # uint32) to 4-channel uint8 (rgba uint8)
         # note: this workaround is only possible for nearest interpolation!
         fix_uint32 = False
@@ -125,37 +161,158 @@ def resize(
     return sample
 
 
-class Resize:
+def pad(
+    sample: BatchType,
+    padding_top: int,
+    padding_bottom: int,
+    padding_left: int,
+    padding_right: int,
+    padding_mode: str = 'zero',
+    keys_to_ignore: Optional[Iterable[str]] = None,
+) -> BatchType:
+    keys_to_ignore_list = list(keys_to_ignore or [])
+    # avoid padding backups
+    keys_to_ignore_list.extend(
+        [k for k in sample if k.endswith(FULLRES_SUFFIX)]
+    )
+
+    kwargs_lookup = {
+        'zero': {'mode': 'constant', 'constant_values': 0},
+        'reflect': {'mode': 'reflect'},
+    }
+
+    for key in _get_relevant_spatial_keys(sample, keys_to_ignore_list):
+        value = sample[key]
+
+        assert value.ndim in (2, 3)  # with channels last!
+
+        # apply padding
+        padding = ((padding_top, padding_bottom),
+                   (padding_left, padding_right))
+        if value.ndim == 3:
+            padding = (*padding, (0, 0))
+
+        value = np.pad(value, padding, **kwargs_lookup[padding_mode])
+
+        sample[key] = value
+
+    return sample
+
+
+class Resize(PreprocessingBase):
     def __init__(
         self,
         height: int,
         width: int,
         keys_to_ignore: Optional[Iterable[str]] = None,
+        keep_aspect_ratio: bool = False,
+        padding_mode: str = 'zero',
     ) -> None:
         self._height = height
         self._width = width
         self._keys_to_ignore = keys_to_ignore
+        self._keep_aspect_ratio = keep_aspect_ratio
+        assert padding_mode in ('zero', 'reflect')
+        self._padding_mode = padding_mode
 
-    def __call__(self, sample: BatchType) -> BatchType:
-        return resize(
-            sample, self._height, self._width,
+        super().__init__(
+            fixed_parameters={
+                'keys_to_ignore': self._keys_to_ignore,
+                'keep_aspect_ratio': keep_aspect_ratio,
+                'padding_mode': padding_mode
+            },
+            multiscale_processing=False
+        )
+
+    def _preprocess(
+        self,
+        sample: BatchType,
+        **kwargs
+    ) -> Tuple[BatchType, Dict[str, Any]]:
+        # read shape from rgb or depth image (at least one is available)
+        orig_height, orig_width = _get_input_shape(sample)
+
+        if not self._keep_aspect_ratio:
+            # resize to fixed size, might distort aspect ratio
+            height = self._height
+            width = self._width
+
+            # determine padding -> no padding
+            pad_top, pad_bottom, pad_left, pad_right = 0, 0, 0, 0
+
+            valid_region_slice_y = slice(0, height)
+            valid_region_slice_x = slice(0, width)
+        else:
+            # resize to fixed size, while keeping aspect ratio
+            # determine scale and new height and width
+            scale = min(self._height/orig_height, self._width/orig_width)
+            height = int(round(scale*orig_height))
+            width = int(round(scale*orig_width))
+            # determine padding
+            pad_height = self._height - height
+            pad_top = pad_height // 2
+            pad_bottom = pad_height - pad_top
+            pad_width = self._width - width
+            pad_left = pad_width // 2
+            pad_right = pad_width - pad_left
+
+            valid_region_slice_y = slice(pad_top, pad_top+height)
+            valid_region_slice_x = slice(pad_left, pad_left+width)
+
+        # apply resize
+        sample_resized = resize(
+            sample,
+            height=height, width=width,
             keys_to_ignore=self._keys_to_ignore
         )
 
+        # apply padding
+        sample_resized_padded = pad(
+            sample_resized,
+            padding_top=pad_top, padding_bottom=pad_bottom,
+            padding_left=pad_left, padding_right=pad_right,
+            padding_mode=self._padding_mode,
+            keys_to_ignore=self._keys_to_ignore
+        )
 
-class RandomResize:
+        return sample_resized_padded, {
+            'old_height': orig_height,
+            'old_width': orig_width,
+            'new_height': self._height,
+            'new_width': self._width,
+            'valid_region_slice_y': valid_region_slice_y,
+            'valid_region_slice_x': valid_region_slice_x,
+        }
+
+
+class RandomResize(PreprocessingBase):
     def __init__(
         self,
         min_scale: float,
         max_scale: float,
+        keys_to_ignore: Optional[Iterable[str]] = None,
     ) -> None:
         if min_scale < 0 or min_scale > max_scale:
-            raise ValueError('Unexpected value of `min_scale`')
+            raise ValueError('Unexpected value for `min_scale`')
 
         self._min_scale = min_scale
         self._max_scale = max_scale
+        self._keys_to_ignore = keys_to_ignore
 
-    def __call__(self, sample: BatchType) -> BatchType:
+        super().__init__(
+            fixed_parameters={
+                'min_scale': self._min_scale,
+                'max_scale': self._max_scale,
+                'keys_to_ignore': self._keys_to_ignore
+            },
+            multiscale_processing=False
+        )
+
+    def _preprocess(
+        self,
+        sample: BatchType,
+        **kwargs
+    ) -> Tuple[BatchType, Dict[str, Any]]:
         # read shape from rgb or depth image (at least one is available)
         h, w = _get_input_shape(sample)
 
@@ -170,4 +327,14 @@ class RandomResize:
         width = int(round(target_scale*w))
 
         # resize images in sample
-        return resize(sample, height, width)
+        return resize(
+            sample, height, width,
+            keys_to_ignore=self._keys_to_ignore
+        ), {
+            'old_height': h,
+            'old_width': w,
+            'new_height': height,
+            'new_width': width,
+            'valid_region_slice_y': slice(0, height),
+            'valid_region_slice_x': slice(0, width),
+        }

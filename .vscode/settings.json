@@ -1,7 +1,7 @@
 {
     "python.testing.pytestArgs": [
         ".",
-        "-vvs",
+        "-vv",
         //"--keep-files",   // enable this to keep the test files (see /tmp/pytest-of-userXY)
         //"--force-onnx-export",  // enable this to force onnx export
         //"--show-results",    // enable this to show results

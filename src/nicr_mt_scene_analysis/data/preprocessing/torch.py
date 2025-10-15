@@ -1,19 +1,31 @@
 # -*- coding: utf-8 -*-
 """
 .. codeauthor:: Daniel Seichter <daniel.seichter@tu-ilmenau.de>
+.. codeauthor:: Soehnke Fischedick <soehnke-benedikt.fischedick@tu-ilmenau.de>
 """
+from typing import Any, Dict, Tuple
+
 import numpy as np
 import torch
 
 from ...types import BatchType
-from .utils import _get_relevant_spatial_keys
-from .multiscale_supervision import _enable_multiscale
+from .base import PreprocessingBase
+from .utils import _get_relevant_tensor_keys
 
 
-class ToTorchTensors:
-    @_enable_multiscale
-    def __call__(self, sample: BatchType, **kwargs) -> BatchType:
-        for key in _get_relevant_spatial_keys(sample):
+class ToTorchTensors(PreprocessingBase):
+    def __init__(
+        self,
+        multiscale_processing: bool = True
+    ) -> None:
+        super().__init__(multiscale_processing=multiscale_processing)
+
+    def _preprocess(
+        self,
+        sample: BatchType,
+        **kwargs
+    ) -> Tuple[BatchType, Dict[str, Any]]:
+        for key in _get_relevant_tensor_keys(sample):
             value = sample[key]
 
             if 3 == value.ndim:
@@ -25,6 +37,22 @@ class ToTorchTensors:
                     value = value[np.newaxis, ...]
                 # otherwise nothing to do, we do not want to add channel axis
                 # for masks etc.
+            elif 1 == value.ndim:
+                if 'dense_visual_embedding_lut' == key:
+                    # If the dataset sample has zero instances, the embedding
+                    # lut will be empty, resulting in a tensor with ndim==1 and
+                    # shape==(0,).
+                    # If not explictily handled it only the ndim==2 case (
+                    # with instances) will get converted to torch.Tensor
+                    # but the ndim==1 case will remain numpy.ndarray.
+                    pass
+                elif 'image_embedding' == key:
+                    # image_embeddings are always ndim==1 and should still
+                    # get converted to torch.Tensor.
+                    pass
+                else:
+                    raise ValueError(f"Cannot handle entry '{key}' with "
+                                     f"shape '{value.shape}'")
             else:
                 raise ValueError(f"Cannot handle entry '{key}' with "
                                  f"shape '{value.shape}'")
@@ -42,4 +70,4 @@ class ToTorchTensors:
 
             sample[key] = torch.from_numpy(value)
 
-        return sample
+        return sample, {}

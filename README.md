@@ -5,6 +5,7 @@ It contains essential functions for:
 - panoptic segmentation (semantic + instance segmentation)
 - instance orientation estimation
 - scene classification
+- dense visual embedding prediction (i.e. text aligned pixelwise embeddings)
 
 with ResNet / Swin Transformer based encoder-decoder architectures processing RGB / Depth / RGB-D inputs.
 
@@ -12,6 +13,7 @@ The repository builds upon the [NICR Scene Analysis Datasets](https://github.com
 - [EMSANet](https://github.com/TUI-NICR/EMSANet)
 - [EMSAFormer](https://github.com/TUI-NICR/EMSAFormer)
 - [Panoptic Mapping](https://github.com/TUI-NICR/panoptic-mapping)
+- [DVEFormer](https://github.com/TUI-NICR/DVEFormer)
 
 > Note that this package is used in ongoing research projects and will be extended and maintained as needed. Backward compatibility might be broken in new versions.
 
@@ -19,6 +21,24 @@ The repository builds upon the [NICR Scene Analysis Datasets](https://github.com
 The source code is published under Apache 2.0 license, see [license file](LICENSE) for details.
 
 If you use the source code, please cite the paper related to your work:
+---
+**Efficient Prediction of Dense Visual Embeddings via Distillation and RGB-D Transformers** (Accepted at IROS 2025):
+> Fischedick, S., Seichter, D., Stephan, B., Schmidt, R., Gross, H.-M.
+*Efficient Prediction of Dense Visual Embeddings via Distillation and RGB-D Transformers*,
+accepted at IEEE/RSJ International Conference on Intelligent Robots and Systems (IROS), 2025.
+
+<details>
+<summary>BibTeX</summary>
+
+```bibtex
+@inproceedings{dveformer2025iros,
+  title     = {{Efficient Prediction of Dense Visual Embeddings via Distillation and RGB-D Transformers}},
+  author    = {Fischedick, S{\"o}hnke and Seichter, Daniel and Stephan, Benedict and Schmidt, Robin and Gross, Horst-Michael},
+  booktitle = {Accepted at IEEE/RSJ International Conference on Intelligent Robots and Systems (IROS)},
+  year      = {2025}
+}
+```
+</details>
 
 ---
 
@@ -52,7 +72,7 @@ in IEEE International Joint Conference on Neural Networks (IJCNN), pp. 1-10, 202
 <summary>BibTeX</summary>
 
 ```bibtex
-@inproceedings{emsaformer2023ijcnn,  
+@inproceedings{emsaformer2023ijcnn,
   title     = {{Efficient Multi-Task Scene Analysis with RGB-D Transformers}},
   author    = {Fischedick, S{\"o}hnke and Seichter, Daniel and Schmidt, Robin and Rabes, Leonard and Gross, Horst-Michael},
   booktitle = {IEEE International Joint Conference on Neural Networks (IJCNN)},
@@ -90,15 +110,15 @@ in IEEE International Joint Conference on Neural Networks (IJCNN), pp. 1-10, 202
 ---
 
 ## Installation
-To use our `nicr-multitask-scene-analysis` package, you must install PyTorch and TorchVision first (see [PyTorch documentation](https://pytorch.org/get-started/locally/)).
-The code was tested with PyTorch 1.10, 1.13, 2.0 as well as 2.3.
+To use our `nicr-multitask-scene-analysis` package, you must install OpenCV, PyTorch, and TorchVision first (see [PyTorch documentation](https://pytorch.org/get-started/locally/)).
+The code was tested with PyTorch 1.10, 1.13, 2.0, 2.3 as well as 2.8.
 
 ```bash
 # requirements:
 # - PyTorch, TorchVision (see note above)
 # - NICR Scene Analysis Datasets (see below)
 # - all remaining dependencies are installed automatically
-python -m pip install "git+https://github.com/TUI-NICR/nicr-scene-analysis-datasets.git@v0.7.0"
+python -m pip install "git+https://github.com/TUI-NICR/nicr-scene-analysis-datasets.git@v0.8.3"
 
 # option 1: directly install to your site packages
 python -m pip install "git+https://github.com/TUI-NICR/nicr-multitask-scene-analysis.git"
@@ -107,6 +127,17 @@ python -m pip install "git+https://github.com/TUI-NICR/nicr-multitask-scene-anal
 git clone https://github.com/TUI-NICR/nicr-multitask-scene-analysis.git
 cd /path/to/this/repository
 python -m pip install -e "./"
+```
+
+If you want pip to also install the optional requirement sets we provide for PyTorch (`withtorch`) and OpenCV (`withopencv`), append the extras to the package specifier.
+You can choose either extra individually or combine both:
+
+```bash
+# option 1: direct install in your site packages with extras
+python -m pip install "nicr-mt-scene-analysis[withtorch,withopencv] @ git+https://github.com/TUI-NICR/nicr-multitask-scene-analysis.git"
+
+# option 2: editable install with extras
+python -m pip install -e "./[withtorch,withopencv]"
 ```
 
 Note, if you use this repository along with our other projects, please follow the installation instructions given there. This ensures installing the correct version.
@@ -123,9 +154,10 @@ This repository provides some core functionality for multi-task scene analysis.
 In the following section, some major components are listed ordered by their folder structure in the repository.
 
 ### Preprocessing
-For preparing network inputs, different preprocessing and augmentation steps are required. Similar to [NICR Scene Analysis Datasets](https://github.com/TUI-NICR/nicr-scene-analysis-datasets), all preprocessors work inplace on a dict of inputs. Except of `TorchTransformWrapper` all processing steps are implemented using NumPy (not PyTorch).  
+For preparing network inputs, different preprocessing and augmentation steps are required. Similar to [NICR Scene Analysis Datasets](https://github.com/TUI-NICR/nicr-scene-analysis-datasets), all preprocessors work inplace on a dict of inputs. Except of `TorchTransformWrapper` all processing steps are implemented using NumPy (not PyTorch).
 This package implements the following preprocessing modules:
 - `CloneEntries`: Clones specific keys to an extra field in the input dict. This can be helpful if data should be kept without preprocessing.
+- `DenseVisualEmbeddingTargetGenerator`: Uses panoptic segmentation generated by `PanopticTargetGenerator`  and embeddings provided along with the samples to generate an embedding lookup table and a dense index image. These can be combined to a dense visual embedding image e.g. for knowledge distillation.
 - `FlatCloneEntries`: Similar to CloneEntires but appends a suffix to the keys and does not build a nested dict.
 - `FullResCloner`: Similar to FlatCloneEntires and can be used to keep the input data in full resolution before resizing happens (use this preprocessor to ensure that validation is done on full resolution).
 - `InstanceClearStuffIDs`: Enforces that all stuff pixels have the instance id equal to 0 (indicates *no_instance*).
@@ -140,6 +172,7 @@ This package implements the following preprocessing modules:
 - `RandomHorizontalFlip`: Flips the image randomly at the horizontal axis for augmentation of the training data. Note, the same flipping is automatically applied to all spatial keys and given orientations in the dict.
 - `RandomResize`: Randomly resizes for augmentation of the training data.  Note, the resizing is automatically applied to all spatial keys in the dict.
 - `Resize`: Resize so the inputs fits a given size. Note, the same resizing is automatically applied to all spatial keys in the dict.
+- `ScaleDepth`: Similar to `NormalizeDepth` but scales the depth values sample-wise to a given range.
 - `SemanticClassMapper`: Map semantic classes in a sample to a new label. This can be helpful for example for ScanNet to map semantic classes ignored in the benchmark to void.
 - `ToTorchTensors`: Converts the NumPy arrays to torch tensors.
 - `TorchTransformWrapper`: Wrapper that enables using torchvision transforms with multi-modal input (after converting to torch tensors).
@@ -148,6 +181,7 @@ This package implements the following preprocessing modules:
 ### Loss
 The different tasks require different loss computations. The following classes are provided:
 - `CrossEntropyLossSemantic`: Computes the cross entropy loss for the semantic segmentation.
+- `CosineEmbeddingLoss`: Computes the cosine distance loss for the dense visual embedding prediction.
 - `L1Loss`: Computes the L1 loss that can be used, e.g., for instance offset loss computation.
 - `MSELoss`: Computes the MSE loss that can be used, e.g., for instance center loss computation.
 - `VonMisesLossBiternion`: Computes a dense version of the [VonMisesLoss](https://link.springer.com/chapter/10.1007/978-3-319-24947-6_13) in biternion encoding. This can be used for computing the loss for instance orientation estimation.
@@ -186,6 +220,9 @@ For exporting Swin Transformer backbones, see: [EMSAFormer](https://github.com/T
 - `PyramidPoolingModule`: Pyramid Pooling Module of [PSPNet](https://arxiv.org/abs/1612.01105) with fixed pooling sizes (adaptive output size depending on the input).
 
 #### Decoder
+- `EmbeddingDecoder`: Convolution-based decoder for outputting a fixed-size
+pixelwise embedding with multi-scale output heads.
+- `EmbeddingMLPDecoder`: Same as `EmbeddingDecoder` but MLP-based (similar to SegFormer).
 - `InstanceDecoder`: Convolution-based decoder for instance segmentation and instance orientation estimation with multi-scale output heads.
 - `InstanceMLPDecoder`: Same as `InstanceDecoder` but MLP-based (similar to SegFormer).
 - `NormalDecoder`: Convolution-based decoder for normal estimation with multi-scale output heads.
@@ -212,6 +249,7 @@ For exporting Swin Transformer backbones, see: [EMSAFormer](https://github.com/T
 - `PanopticPostprocessing`: Wrapper that encapsulates both an instance and a semantic postprocessor to enable panoptic segmentation. It first calls the encapsulated postprocessors and, subsequently, derives the panoptic segmentation based on the predicted semantic segmentation, i.e., the predicted semantic class decides whether a given pixel is considered as foreground (thing) or background (stuff). Moreover, if the orientation estimation task is present, it also handles deriving instance orientations based on the predicted panoptic instances.
 - `ScenePostprocessing`: Handles postprocessing the raw outputs of the scene classification decoder, i.e., applies softmax and determines the argmax.
 - `SemanticPostprocessing`: Handles resizing and postprocessing the raw outputs of the semantic decoder, i.e., applies softmax and determines the argmax.
+- `DenseVisualEmbeddingPostprocessing`: Computes cosine similarity between the output embeddings and semantic text embeddings. The output is used to retrive semantic segmentation predictions with softmax and argmax.
 
 #### Upsampling
 - `Upsampling`: Implements nearest and bilinear upsampling as well as our proposed learned upsampling. Note that the learned upsampling is always done by a factor of 2. Use multiple modules for larger factors.
@@ -226,6 +264,7 @@ In training, only the loss gets computed. In validation, besides the loss, metri
 Note, no additional loss is calculated.
 - `SceneTaskHelper`: Task helper for scene classification. Computes the cross entropy loss and the (balanced) accuracy Acc/bAcc.
 - `SemanticTaskHelper`: Task helper for semantic segmentation. Computes the cross entropy loss and the mIoU.
+- `DenseVisualEmbeddingTaskHelper`: Task helper for dense visual embedding prediction. Computes the cosine embedding loss for knowledge distillation as well as the mIoU for text-based and visual-mean based semantic segmentation.
 
 ### Visualization
 Functions for visualizing the ground truth and prediction for each task.
@@ -240,6 +279,33 @@ Some other stuff that might be useful to you.
 ## Changelog
 
 > Most relevant changes are listed below. Note that backward compatibility might be broken.
+
+**Version 0.3.0 (Sep 15, 2025)**
+- switch from from flat to src layout
+- transition from setup.py to pyproject.toml for packaging (note that this means we are no longer able to detect
+  whether opencv and/or torch are installed, instead this check is now done at runtime)
+- use ruff for linting
+- remove Python 3.6 at all, do not test for Python 3.11 anymore, add testing for Python 3.12
+- refactor preprocessing:
+  - add base class, store relevant preprocessing parameters in an additional entry in dict to retrace preprocessing steps
+  - use `meta` dictionaries within preprocessing which enables to mix datasets with different thing/stuff class information
+  - refactor multiscale supervision handling, see `multiscale_processing` argument in constructors
+  - add `_get_relevant_tensor_keys` helper and enforce spatial dimensionality in `_get_relevant_spatial_keys`
+  - add `keys_to_ignore` to `RandomResize` preprocessor
+  - add `ScaleDepth` preprocessor
+  - add `invalid_depth_value` to `NormalizeDepth` preprocessor
+  - fix `TorchTransformWrapper` to work with torchvision.transforms.Compose containing a final FiveCrop/TenCrop
+  - extend `Resize`/`RandomResize` to support `keep_aspect_ratio` workflows (e.g., ADE20K) and improved crop handling
+  - adapt tests
+- add `DenseVisualEmbeddingTargetGenerator` preprocessor for loading dense visual embeddings and align them with panoptic segmentation masks
+- add `EmbeddingDecoder`and `EmbeddingMLPDecoder` for dense visual embedding prediction
+- add `DenseVisualEmbeddingPostprocessing` for postprocessing of dense visual embeddings (e.g. use text embeddings for semantic segmentation prediction)
+- add `DenseVisualEmbeddingTaskHelper` for dense visual embedding prediction training and validation
+- add `CosineEmbeddingLoss` for computing the cosine distance loss for dense visual embedding prediction
+- improve `move_batch_to_device` to traverse nested dict/list structures
+- replaced some defaultdicts with normal dicts for torch.compile support
+- fixed final file write of `CSVLogger`
+- fix mIoU computation and test case for newer torchmetrics versions
 
 **Version 0.2.3 (Jun 26, 2024)**
 - add support for MPS device (only inference tested, training might work as well)

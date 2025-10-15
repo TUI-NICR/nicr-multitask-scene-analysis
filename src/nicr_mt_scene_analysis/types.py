@@ -3,7 +3,7 @@
 .. codeauthor:: Daniel Seichter <daniel.seichter@tu-ilmenau.de>
 
 """
-from typing import Any, Dict, Optional, Tuple, Union
+from typing import Any, Dict, Tuple, Union
 
 from torch import Tensor
 

@@ -3,21 +3,22 @@
 .. codeauthor:: Soehnke Fischedick <soehnke-benedikt.fischedick@tu-ilmenau.de>
 .. codeauthor:: Daniel Seichter <daniel.seichter@tu-ilmenau.de>
 """
-from typing import Any, Tuple, Union
+from typing import Any, Dict, Tuple, Union
 
 import numpy as np
 
 from ...types import BatchType
 from ...utils import np_rad2biternion
-from .multiscale_supervision import _enable_multiscale
+from .base import PreprocessingBase
 from .utils import _keys_available
 from nicr_scene_analysis_datasets.dataset_base import OrientationDict
 
 
-class OrientationTargetGenerator:
+class OrientationTargetGenerator(PreprocessingBase):
     def __init__(
         self,
-        semantic_classes_estimate_orientation: Union[Tuple[bool], None] = None
+        semantic_classes_estimate_orientation: Union[Tuple[bool], None] = None,
+        multiscale_processing: bool = True,
     ) -> None:
         if semantic_classes_estimate_orientation is not None:
             # convert list of booleans to list of class ids
@@ -26,13 +27,24 @@ class OrientationTargetGenerator:
         else:
             self._orientation_class_ids = None
 
-    @_enable_multiscale
-    def __call__(self, sample: BatchType, **kwargs: Any) -> BatchType:
+        super().__init__(
+            fixed_parameters={
+                'semantic_classes': self._orientation_class_ids
+            },
+            multiscale_processing=multiscale_processing
+        )
+
+    def _preprocess(
+        self,
+        sample: BatchType,
+        **kwargs
+    ) -> Tuple[BatchType, Dict[str, Any]]:
+
         if not _keys_available(sample, ('instance', 'orientations',
                                         'semantic')):
             # might be a multiscale call with disabled multiscale for instances
             # or inference
-            return sample
+            return sample, {}
 
         # get height and width
         height, width = sample['instance'].shape
@@ -82,4 +94,4 @@ class OrientationTargetGenerator:
         sample['orientation_foreground'] = foreground_img
         sample['orientations_present'] = orientations_present
 
-        return sample
+        return sample, {}

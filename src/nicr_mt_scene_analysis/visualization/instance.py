@@ -60,7 +60,7 @@ class InstanceColorGenerator:
 
             next_idx = len(self.id_to_color) - 1    # -1 to respect 0/void
             if next_idx >= self.base_cmap.shape[0]:
-                warnings.warn(f'Colormap limit reached, reusing colors.')
+                warnings.warn('Colormap limit reached, reusing colors.')
                 next_idx = next_idx % self.base_cmap.shape[0]
 
             # take the next color

@@ -2,7 +2,8 @@
 """
 .. codeauthor:: Mona Koehler <mona.koehler@tu-ilmenau.de>
 """
-from typing import Callable, Union, List, Tuple
+from typing import Any, Callable, Dict, Union, List, Tuple
+
 import warnings
 import torch
 from torchvision.transforms import FiveCrop, TenCrop
@@ -11,11 +12,12 @@ from torchvision.transforms import Compose
 from torchvision.transforms.functional import InterpolationMode
 
 from ...types import BatchType
+from .base import PreprocessingBase
 from .resize import FULLRES_SUFFIX
 from .utils import _get_relevant_spatial_keys
 
 
-class TorchTransformWrapper:
+class TorchTransformWrapper(PreprocessingBase):
     def __init__(
         self,
         transform_obj: Callable[[torch.Tensor], torch.Tensor],
@@ -23,21 +25,31 @@ class TorchTransformWrapper:
     ) -> None:
         """
         This class enables using torchvision transforms when you have a
-        multimodal input. For example, if both RGB and depth image should be
+        multi-modal input. For example, if both RGB and depth image should be
         randomly cropped with the same cropping parameters. This class first
-        concatenates all  relevant spatial inputs, puts the result through the
+        concatenates all relevant spatial inputs, puts the result through the
         provided torchvision transform and splits the final result again along
         the channel axis. Note that this only works if all inputs are torch
         tensors.
         """
-        super().__init__()
-        self.raise_error_if_resize(transform_obj)
+        self._raise_error_if_resize(transform_obj)
         self._transform_obj = transform_obj
         if isinstance(keys, str):
             keys = [keys]
         self._keys = keys
 
-    def __call__(self, sample: BatchType) -> BatchType:
+        super().__init__(
+            fixed_parameters={
+                'transform_obj': str(transform_obj),  # avoid complex objects
+            },
+            multiscale_processing=False
+        )
+
+    def _preprocess(
+        self,
+        sample: BatchType,
+        **kwargs
+    ) -> Tuple[BatchType, Dict[str, Any]]:
         # automatically select keys from the sample if no keys were specified
         if self._keys is None:
             keys = _get_relevant_spatial_keys(sample)
@@ -50,14 +62,16 @@ class TorchTransformWrapper:
         stacked_tensor = []
         for key in keys:
             assert key in sample
-            # only torch tensors are supported. Please use ToTorchTensor()
-            # before this TorchTransformWrapper.
+            # note, only torch tensors are supported, use the ToTorchTensor()
+            # preprocessor before this TorchTransformWrapper.
             if not torch.is_tensor(sample[key]):
-                warnings.warn(f"{key} is not a torch tensor! Skipping...")
+                warnings.warn(
+                    f"{key} is not a torch tensor! Skipping this key ..."
+                )
                 continue
             value = sample[key].clone()
             shapes[key] = value.shape
-            # masks typically only have 2 dimensions. We add one dimension for
+            # masks typically only have 2 dimensions, we add one dimension for
             # concatenating, which will be removed afterwards again
             if 2 == value.ndim:
                 value = value.unsqueeze(dim=0)
@@ -67,9 +81,9 @@ class TorchTransformWrapper:
         # check if all tensors have the same data type
         dtypes = [x.dtype for x in stacked_tensor]
         if len(set(dtypes)) > 1:
-            key_dtype = {key: dtype for key, dtype in zip(keys, dtypes)}
+            dtype_dict = {key: dtype for key, dtype in zip(keys, dtypes)}
             warnings.warn(
-                f"Tensors have different datatypes! {key_dtype}"
+                f"Tensors have different datatypes! {dtype_dict}"
             )
 
         # concatenate all tensors and apply transform
@@ -78,44 +92,51 @@ class TorchTransformWrapper:
 
         n_channels = [v[0] if 3 == len(v) else 1 for v in shapes.values()]
 
-        # multi crop stuff:
-        if isinstance(self._transform_obj, (FiveCrop, TenCrop)):
-            out_dict = {key: [] for key in shapes.keys()}
-            # first split each crop
+        if self._has_final_multi_crop(self._transform_obj):
+            out_dict = {key: [] for key in keys}
+            # 1: split each crop
             for o in out:
                 splitted_tensors = torch.split(o, n_channels)
                 # accumulate the crops for each key
-                for i, key in enumerate(shapes.keys()):
+                for i, key in enumerate(keys):
                     out_dict[key].append(splitted_tensors[i])
+            # 2: stack the crops
             for key, value in out_dict.items():
-                # stack the crops
                 sample[key] = torch.stack(value).type(sample[key].dtype)
-
         else:
             # split tensor again and assign to sample with original data type
             splitted_tensors = torch.split(out, n_channels)
-            for i, key in enumerate(shapes.keys()):
+            for i, key in enumerate(keys):
                 sample[key] = splitted_tensors[i].type(sample[key].dtype)
 
-        # remove additional dimension again
+        # remove additional dimensions
         for key, shape in shapes.items():
             if sample[key].ndim != len(shape):
                 sample[key] = sample[key].squeeze(dim=0)
 
-        return sample
+        return sample, {'keys': keys}
 
-    def raise_error_if_resize(
+    @classmethod
+    def _has_final_multi_crop(cls, transform_obj):
+        if isinstance(transform_obj, (FiveCrop, TenCrop)):
+            return True
+        elif isinstance(transform_obj, Compose):
+            return cls._has_final_multi_crop(transform_obj.transforms[-1])
+
+        return False
+
+    def _raise_error_if_resize(
         self,
         transform_obj: Callable[[torch.Tensor], torch.Tensor]
     ) -> None:
         if isinstance(transform_obj, Compose):
             for trans_obj in transform_obj.transforms:
-                self.raise_error_if_resize(trans_obj)
+                self._raise_error_if_resize(trans_obj)
         if isinstance(transform_obj, (Resize, RandomResizedCrop)):
             if transform_obj.interpolation != InterpolationMode.NEAREST:
                 raise ValueError(
                     "Resize operations are only supported with nearest "
                     f"interpolation! Got {transform_obj.interpolation}. "
                     "Other interpolation methods will lead to unexpected "
-                    "results for e.g. depth, segmentation, instance, ..."
+                    "results, e.g., for depth, segmentation, instance, ..."
                 )

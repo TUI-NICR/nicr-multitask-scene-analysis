@@ -2,53 +2,22 @@
 """
 .. codeauthor:: Daniel Seichter <daniel.seichter@tu-ilmenau.de>
 """
-import re
-from typing import Tuple
-
-from functools import wraps
+from typing import Any, Dict, Tuple
 
 from ...types import BatchType
+from .base import PreprocessingBase
 from .clone import clone_entries
+from .base import MULTI_DOWNSCALE_KEY_FMT
 from .resize import resize
 from .utils import _keys_available
 from .utils import _get_input_shape
 
 
-MULTI_DOWNSCALE_KEY_FMT = '_down_{}'
-
-
-def _enable_multiscale(f):
-    @wraps(f)
-    def wrapper(*args, **kwargs):
-        # apply normal preprocessing
-        sample = f(*args, **kwargs)
-
-        # multiscale
-        if len(args) == 2:
-            # self and sample are given as args
-            args = (args[0], )
-
-        for key in sample:
-            res = re.match(MULTI_DOWNSCALE_KEY_FMT.format('([0-9]+)'), key)
-            if res is None:
-                # key does not match
-                continue
-
-            # apply preprocessing to multiscale entry
-            kwargs['sample'] = sample[key]
-            kwargs['downscale'] = int(res.groups()[0])
-            sample[key] = f(*args, **kwargs)
-
-        return sample
-
-    return wrapper
-
-
-def get_downscale(sample: BatchType, downscale) -> BatchType:
+def get_downscale(sample: BatchType, downscale: int) -> BatchType:
     return sample.get(MULTI_DOWNSCALE_KEY_FMT.format(downscale), None)
 
 
-class MultiscaleSupervisionGenerator:
+class MultiscaleSupervisionGenerator(PreprocessingBase):
     def __init__(
         self,
         downscales: Tuple[int],
@@ -57,11 +26,23 @@ class MultiscaleSupervisionGenerator:
         self._downscales = downscales
         self._keys = keys
 
+        super().__init__(
+            fixed_parameters={
+                'downscales': self._downscales,
+                'keys': self._keys
+            },
+            multiscale_processing=False  # it is creating the multiscale entries
+        )
+
     @property
     def downscales(self):
         return self._downscales
 
-    def __call__(self, sample: BatchType) -> BatchType:
+    def _preprocess(
+        self,
+        sample: BatchType,
+        **kwargs
+    ) -> Tuple[BatchType, Dict[str, Any]]:
         if not _keys_available(sample, self._keys):
             raise KeyError(f"At least one key of '{self._keys}' is missing in"
                            "`sample`.")
@@ -69,17 +50,18 @@ class MultiscaleSupervisionGenerator:
         # read shape from rgb or depth image (at least one is available)
         h, w = _get_input_shape(sample)
 
+        shape_dict = {}
         for downscale in self._downscales:
             # clone selected entries
             cloned_sample = clone_entries(sample, keys_to_clone=self._keys)
 
             # resize
-            cloned_sample = resize(cloned_sample,
-                                   height=int(h / downscale),
-                                   width=int(w / downscale))
+            h_down, w_down = int(h / downscale), int(w / downscale)
+            cloned_sample = resize(cloned_sample, height=h_down, width=w_down)
+            shape_dict[downscale] = (h_down, w_down)
 
             # add resized multiscale clone to dict
             key = MULTI_DOWNSCALE_KEY_FMT.format(downscale)
             sample[key] = cloned_sample
 
-        return sample
+        return sample, {'shapes': shape_dict}

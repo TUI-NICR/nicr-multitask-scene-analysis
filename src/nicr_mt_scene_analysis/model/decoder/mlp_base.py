@@ -8,9 +8,10 @@ MLP decoder is inspired by:
     https://arxiv.org/abs/2105.15203
 
 """
+from typing import Optional, Tuple, Type
+
 import abc
 from collections import OrderedDict
-from typing import Tuple, Type
 
 import torch
 import torch.nn as nn
@@ -40,6 +41,7 @@ class MLPDecoderBase(DecoderBase):
         postprocessing: Type[PostProcessingType],
         downsampling_in_heads: int = 4,
         dropout_p: float = 0.1,
+        n_channels_out: Optional[int] = None,
         normalization: Type[nn.Module] = get_normalization_class(),
         activation: Type[nn.Module] = get_activation_class(),
         upsampling: Type[UpsamplingType] = get_upsampling_class()
@@ -112,10 +114,15 @@ class MLPDecoderBase(DecoderBase):
             ))
         self.skip_branches = nn.ModuleList(skip_branches)
 
+        # calculate default n_channels_out if not provided.
+        # this is the default behavior in SegFormer.
+        if n_channels_out is None:
+            n_channels_out = sum(n_channels)//len(n_channels)
+
         # final convolution after concatenation
         self.fuse = ConvNormAct(
             n_channels_in=sum(n_channels),
-            n_channels_out=sum(n_channels)//len(n_channels),
+            n_channels_out=n_channels_out,
             kernel_size=1,
             normalization=normalization,    # should be batchnorm
             activation=activation    # should be relu

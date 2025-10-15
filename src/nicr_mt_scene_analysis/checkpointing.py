@@ -80,7 +80,7 @@ class CheckpointHelper:
         larger = any(to_find in metric
                      for to_find in ('miou', 'acc', 'rq', 'sq', 'pq'))
         smaller = any(to_find in metric
-                      for to_find in ('mae', 'rmse'))
+                      for to_find in ('mae', 'rmse', 'loss'))
 
         if not (larger ^ smaller):     # xor, at least one but only one
             raise ValueError(f"Cannot determine better value for '{metric}' "

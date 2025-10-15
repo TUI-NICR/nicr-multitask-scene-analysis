@@ -11,6 +11,8 @@ import torch
 
 from nicr_mt_scene_analysis.model.activation import get_activation_class
 from nicr_mt_scene_analysis.model.block import get_block_class
+from nicr_mt_scene_analysis.data.preprocessing.base import APPLIED_PREPROCESSING_KEY
+from nicr_mt_scene_analysis.data.preprocessing.resize import Resize
 from nicr_mt_scene_analysis.model.decoder import SemanticDecoder
 from nicr_mt_scene_analysis.model.decoder import SemanticMLPDecoder
 from nicr_mt_scene_analysis.model.decoder import InstanceDecoder
@@ -179,6 +181,15 @@ def decoders_test(tasks,
     # inference (validation) postprocessing
     batch['rgb_fullres'] = torch.ones((3, 3, input_h, input_w),
                                       dtype=torch.uint8)
+
+    # Add applied preprocessing to batch which is required for postprocessing
+    batch[APPLIED_PREPROCESSING_KEY] = [
+        [{
+            'type': Resize.__name__,
+            'valid_region_slice_y': slice(0, input_h),
+            'valid_region_slice_x': slice(0, input_w),
+        },]
+    ]*3
 
     if not training:
         decoder.eval()

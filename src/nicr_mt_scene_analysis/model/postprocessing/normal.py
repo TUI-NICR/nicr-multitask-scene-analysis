@@ -4,7 +4,7 @@
 .. codeauthor:: Daniel Seichter <daniel.seichter@tu-ilmenau.de>
 """
 from ...data.preprocessing.resize import get_fullres_key
-from ...data.preprocessing.resize import get_fullres_shape
+from ...data.preprocessing.resize import get_valid_region_slices_and_fullres_shape
 from ...types import BatchType
 from ...types import DecoderRawOutputType
 from ...types import PostprocessingOutputType
@@ -45,10 +45,16 @@ class NormalPostprocessing(DensePostprocessingBase):
             'normal_side_outputs': side_outputs
         }
 
-        # resize output to original shape (assume same shape for all samples)
-        shape = get_fullres_shape(batch, 'normal')
-        output_fullres = self._resize_prediction(output,
-                                                 shape=shape, mode='nearest')
+        # crop and resize output to full resolution (original shape)
+        # note, we assume same shape for all samples in batch
+        crop_slices, resize_shape = get_valid_region_slices_and_fullres_shape(
+            batch, 'normal'
+        )
+
+        output_fullres = self._crop_to_valid_region_and_resize_prediction(
+            output, valid_region_slices=crop_slices, shape=resize_shape,
+            mode='nearest'
+        )
 
         # update results dict
         r_dict.update({

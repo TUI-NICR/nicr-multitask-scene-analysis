@@ -2,10 +2,13 @@
 """
 .. codeauthor:: Daniel Seichter <daniel.seichter@tu-ilmenau.de>
 """
+from typing import Any, Dict, Tuple
+
 import cv2
 import numpy as np
 
 from ...types import BatchType
+from .base import PreprocessingBase
 
 
 def adjust_hsv(
@@ -37,7 +40,7 @@ def adjust_hsv(
     return cv2.cvtColor(img_hsv, cv2.COLOR_HSV2RGB)
 
 
-class RandomHSVJitter:
+class RandomHSVJitter(PreprocessingBase):
     def __init__(
         self,
         hue_jitter: float,
@@ -78,10 +81,23 @@ class RandomHSVJitter:
         self._value_limits = [int(-value_jitter*255),
                               int(value_jitter*255)]
 
-    def __call__(self, sample: BatchType) -> BatchType:
+        super().__init__(
+            fixed_parameters={
+                'hue_limits': self._hue_limits,
+                'saturation_limits': self._saturation_limits,
+                'value_limits': self._value_limits
+            },
+            multiscale_processing=False
+        )
+
+    def _preprocess(
+        self,
+        sample: BatchType,
+        **kwargs
+    ) -> Tuple[BatchType, Dict[str, Any]]:
         # this augmentation is applied to rgb image only
         if 'rgb' not in sample:
-            return sample
+            return sample, {}
 
         img = sample['rgb']
         assert img.dtype == 'uint8'
@@ -97,4 +113,6 @@ class RandomHSVJitter:
         # apply augmentation
         sample['rgb'] = adjust_hsv(img, h_offset, s_offset, v_offset)
 
-        return sample
+        return sample, {'applied_hue_offset': h_offset,
+                        'applied_saturation_offset': s_offset,
+                        'applied_value_offset': v_offset}

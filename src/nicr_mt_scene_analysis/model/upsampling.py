@@ -27,6 +27,7 @@ class Upsampling(nn.Module):
         mode: str,
         n_channels: int,
         scale_factor: Union[float, Tuple[float, float]] = 2.,
+        use_bias: bool = True,
     ) -> None:
         super().__init__()
 
@@ -48,13 +49,15 @@ class Upsampling(nn.Module):
                 self.conv = nn.Conv2d(n_channels, n_channels,
                                       groups=n_channels,
                                       kernel_size=3,
-                                      padding=0)
+                                      padding=0,
+                                      bias=use_bias)
             elif mode == 'learned-3x3-zeropad':
                 self.pad = nn.Identity()
                 self.conv = nn.Conv2d(n_channels, n_channels,
                                       groups=n_channels,
                                       kernel_size=3,
-                                      padding=1)
+                                      padding=1,
+                                      bias=use_bias)
 
             # kernel that mimics bilinear interpolation
             w = torch.tensor([[[
@@ -66,8 +69,9 @@ class Upsampling(nn.Module):
             self.conv.weight = torch.nn.Parameter(torch.cat([w]*n_channels))
 
             # set bias to zero
-            with torch.no_grad():
-                self.conv.bias.zero_()
+            if use_bias:
+                with torch.no_grad():
+                    self.conv.bias.zero_()
 
             self._mode = 'nearest'
         else:

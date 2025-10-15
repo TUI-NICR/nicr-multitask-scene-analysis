@@ -132,7 +132,11 @@ def get_backbone(
 
     if pretrained and pretrained_filepath is not None:
         print(f"Loading pretrained weights from: '{pretrained_filepath}'")
-        checkpoint = torch.load(pretrained_filepath, map_location='cpu')
+        checkpoint = torch.load(
+            pretrained_filepath,
+            map_location='cpu',
+            weights_only=False  # required for newer PyTorch versions to still load old checkpoints
+        )
 
         state_dict = OrderedDict()
 
@@ -147,11 +151,22 @@ def get_backbone(
         for key, weight in checkpoint_weights.items():
             new_key = key.replace('model.', '')
             new_key = new_key.replace('backbone.', '')
+            # ImageNet pretraining script might have a prefix '_orig_mod.'
+            # in the state_dict if the model was trained with
+            # torch.nn.DataParallel or torch.nn.DistributedDataParallel.
+            # We need to remove this prefix here.
+            new_key = new_key.replace('_orig_mod.', '')
             state_dict[new_key] = weight
 
         # remove keys of final fully-connected layer
-        state_dict.pop('fc.weight')
-        state_dict.pop('fc.bias')
+        if 'fc.weight' in state_dict:
+            state_dict.pop('fc.weight')
+        if 'fc.bias' in state_dict:
+            state_dict.pop('fc.bias')
+        if 'fc_embedding.weight' in state_dict:
+            state_dict.pop('fc_embedding.weight')
+        if 'fc_embedding.bias' in state_dict:
+            state_dict.pop('fc_embedding.bias')
 
         if 'resnet' in name:
             if n_input_channels == 1:

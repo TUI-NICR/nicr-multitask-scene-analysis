@@ -7,6 +7,8 @@ import matplotlib.pyplot as plt
 import pytest
 import torch
 
+from nicr_mt_scene_analysis.data.preprocessing.base import APPLIED_PREPROCESSING_KEY
+from nicr_mt_scene_analysis.data.preprocessing.resize import Resize
 from nicr_mt_scene_analysis.model.postprocessing.instance import InstancePostprocessing
 from nicr_mt_scene_analysis.testing import SHOW_RESULTS
 
@@ -116,6 +118,16 @@ def test_instance_postprocessing(batch_size, num_inst, num_inst_size):
         # inference (validation) postprocessing
         'instance_fullres': forgeground_mask.clone()
     }
+
+    # Add applied preprocessing to batch which is required for postprocessing
+    batch[APPLIED_PREPROCESSING_KEY] = [
+        [{
+            'type': Resize.__name__,
+            'valid_region_slice_y': slice(0, h),
+            'valid_region_slice_x': slice(0, w),
+        },]
+    ]*3
+
     data = (heatmap, offset), None    # None: no side outputs
     result_dict = post.postprocess(data, batch, is_training=False)
     found_instances = result_dict['instance_segmentation_gt_foreground']
