@@ -283,7 +283,8 @@ Some other stuff that might be useful to you.
 
 **Version 0.3.1 (Jan 04, 2026)**
 - update DVEFormer citations
-
+- fix rare crash in DenseVisualEmbeddingTaskHelper when data augmentation led to having no valid embedding index at all 
+  for the whole batch
 
 **Version 0.3.0 (Oct 15, 2025)**
 - switch from from flat to src layout
