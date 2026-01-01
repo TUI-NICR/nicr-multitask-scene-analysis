@@ -285,6 +285,7 @@ Some other stuff that might be useful to you.
 - update DVEFormer citations
 - fix rare crash in DenseVisualEmbeddingTaskHelper when data augmentation led to having no valid embedding index at all 
   for the whole batch
+- fix issue in SceneTaskHelper that ConfusionMatrix in newer torchmetrics versions requires a task argument
 
 **Version 0.3.0 (Oct 15, 2025)**
 - switch from from flat to src layout
