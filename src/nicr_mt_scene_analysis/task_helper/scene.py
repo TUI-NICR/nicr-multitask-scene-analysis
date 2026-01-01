@@ -41,7 +41,9 @@ class SceneTaskHelper(TaskHelperBase):
             reduction='mean'    # average over non-ignored targets
         )
         # metrics (keep it on cpu, it is faster)
-        self._metric_cm = ConfusionMatrix(num_classes=self._n_classes)
+        self._metric_cm = ConfusionMatrix(
+            task="multiclass", num_classes=self._n_classes
+        )
         # TODO: remove as the bug is fixed in later versions
         # bugfix: confmat is initialized as type float32 (in v0.6.1) which
         # results in slightly varying ground truth counts over several epochs
