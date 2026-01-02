@@ -31,7 +31,7 @@ IEEE/RSJ International Conference on Intelligent Robots and Systems (IROS), pp. 
 <summary>BibTeX</summary>
 
 ```bibtex
-@inproceedings{dveformer2025iros,  
+@inproceedings{dveformer2025iros,
   title     = {{Efficient Prediction of Dense Visual Embeddings via Distillation and RGB-D Transformers}},
   author    = {Fischedick, S{\"o}hnke and Seichter, Daniel and Stephan, Benedict and Schmidt, Robin and Gross, Horst-Michael},
   booktitle = {IEEE/RSJ International Conference on Intelligent Robots and Systems (IROS)},
@@ -283,7 +283,7 @@ Some other stuff that might be useful to you.
 
 **Version 0.3.1 (Jan 04, 2026)**
 - update DVEFormer citations
-- fix rare crash in DenseVisualEmbeddingTaskHelper when data augmentation led to having no valid embedding index at all 
+- fix rare crash in DenseVisualEmbeddingTaskHelper when data augmentation led to having no valid embedding index at all
   for the whole batch
 - fix issue in SceneTaskHelper that ConfusionMatrix in newer torchmetrics versions requires a task argument
 
