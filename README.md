@@ -22,10 +22,10 @@ The source code is published under Apache 2.0 license, see [license file](LICENS
 
 If you use the source code, please cite the paper related to your work:
 ---
-**Efficient Prediction of Dense Visual Embeddings via Distillation and RGB-D Transformers** (Accepted at IROS 2025):
+**Efficient Prediction of Dense Visual Embeddings via Distillation and RGB-D Transformers** ([IEEE Xplore](https://ieeexplore.ieee.org/document/11245809)):
 > Fischedick, S., Seichter, D., Stephan, B., Schmidt, R., Gross, H.-M.
-*Efficient Prediction of Dense Visual Embeddings via Distillation and RGB-D Transformers*,
-accepted at IEEE/RSJ International Conference on Intelligent Robots and Systems (IROS), 2025.
+*Efficient Prediction of Dense Visual Embeddings via Distillation and RGB-D Transformers*, in
+IEEE/RSJ International Conference on Intelligent Robots and Systems (IROS), pp. 2400-2407, 2025.
 
 <details>
 <summary>BibTeX</summary>
@@ -34,7 +34,8 @@ accepted at IEEE/RSJ International Conference on Intelligent Robots and Systems 
 @inproceedings{dveformer2025iros,
   title     = {{Efficient Prediction of Dense Visual Embeddings via Distillation and RGB-D Transformers}},
   author    = {Fischedick, S{\"o}hnke and Seichter, Daniel and Stephan, Benedict and Schmidt, Robin and Gross, Horst-Michael},
-  booktitle = {Accepted at IEEE/RSJ International Conference on Intelligent Robots and Systems (IROS)},
+  booktitle = {IEEE/RSJ International Conference on Intelligent Robots and Systems (IROS)},
+  pages     = {2400-2407},
   year      = {2025}
 }
 ```
@@ -279,6 +280,12 @@ Some other stuff that might be useful to you.
 ## Changelog
 
 > Most relevant changes are listed below. Note that backward compatibility might be broken.
+
+**Version 0.3.1 (Jan 04, 2026)**
+- update DVEFormer citations
+- fix rare crash in DenseVisualEmbeddingTaskHelper when data augmentation led to having no valid embedding index at all
+  for the whole batch
+- fix issue in SceneTaskHelper that ConfusionMatrix in newer torchmetrics versions requires a task argument
 
 **Version 0.3.0 (Oct 15, 2025)**
 - switch from from flat to src layout
