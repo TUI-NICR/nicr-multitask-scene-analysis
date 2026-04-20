@@ -15,6 +15,7 @@ The repository builds upon the [NICR Scene Analysis Datasets](https://github.com
 - [Panoptic Mapping](https://github.com/TUI-NICR/panoptic-mapping)
 - [DVEFormer](https://github.com/TUI-NICR/DVEFormer)
 
+> [!NOTE]
 > Note that this package is used in ongoing research projects and will be extended and maintained as needed. Backward compatibility might be broken in new versions.
 
 ## License and Citations
@@ -22,10 +23,10 @@ The source code is published under Apache 2.0 license, see [license file](LICENS
 
 If you use the source code, please cite the paper related to your work:
 ---
-**Efficient Prediction of Dense Visual Embeddings via Distillation and RGB-D Transformers** (Accepted at IROS 2025):
+**Efficient Prediction of Dense Visual Embeddings via Distillation and RGB-D Transformers** ([IEEE Xplore](https://ieeexplore.ieee.org/document/11245809), [arXiv](https://arxiv.org/abs/2601.00359)):
 > Fischedick, S., Seichter, D., Stephan, B., Schmidt, R., Gross, H.-M.
-*Efficient Prediction of Dense Visual Embeddings via Distillation and RGB-D Transformers*,
-accepted at IEEE/RSJ International Conference on Intelligent Robots and Systems (IROS), 2025.
+*Efficient Prediction of Dense Visual Embeddings via Distillation and RGB-D Transformers*, in
+IEEE/RSJ International Conference on Intelligent Robots and Systems (IROS), pp. 2400-2407, 2025.
 
 <details>
 <summary>BibTeX</summary>
@@ -34,7 +35,8 @@ accepted at IEEE/RSJ International Conference on Intelligent Robots and Systems 
 @inproceedings{dveformer2025iros,
   title     = {{Efficient Prediction of Dense Visual Embeddings via Distillation and RGB-D Transformers}},
   author    = {Fischedick, S{\"o}hnke and Seichter, Daniel and Stephan, Benedict and Schmidt, Robin and Gross, Horst-Michael},
-  booktitle = {Accepted at IEEE/RSJ International Conference on Intelligent Robots and Systems (IROS)},
+  booktitle = {IEEE/RSJ International Conference on Intelligent Robots and Systems (IROS)},
+  pages     = {2400-2407},
   year      = {2025}
 }
 ```
@@ -111,14 +113,14 @@ in IEEE International Joint Conference on Neural Networks (IJCNN), pp. 1-10, 202
 
 ## Installation
 To use our `nicr-multitask-scene-analysis` package, you must install OpenCV, PyTorch, and TorchVision first (see [PyTorch documentation](https://pytorch.org/get-started/locally/)).
-The code was tested with PyTorch 1.10, 1.13, 2.0, 2.3 as well as 2.8.
+The code was tested with PyTorch 2.10 (and earlier with 1.10, 1.13, 2.0, 2.3, 2.4.1 as well as 2.8).
 
 ```bash
 # requirements:
 # - PyTorch, TorchVision (see note above)
 # - NICR Scene Analysis Datasets (see below)
 # - all remaining dependencies are installed automatically
-python -m pip install "git+https://github.com/TUI-NICR/nicr-scene-analysis-datasets.git@v0.8.3"
+python -m pip install "git+https://github.com/TUI-NICR/nicr-scene-analysis-datasets.git@v0.9.0"
 
 # option 1: directly install to your site packages
 python -m pip install "git+https://github.com/TUI-NICR/nicr-multitask-scene-analysis.git"
@@ -129,7 +131,7 @@ cd /path/to/this/repository
 python -m pip install -e "./"
 ```
 
-If you want pip to also install the optional requirement sets we provide for PyTorch (`withtorch`) and OpenCV (`withopencv`), append the extras to the package specifier.
+If you want pip to also install the optional requirement sets we provide for PyTorch (`withtorch`) and OpenCV (`withopencv`), append the extras to the package specifier. 
 You can choose either extra individually or combine both:
 
 ```bash
@@ -278,7 +280,16 @@ Some other stuff that might be useful to you.
 
 ## Changelog
 
+> [!NOTE]
 > Most relevant changes are listed below. Note that backward compatibility might be broken.
+
+**Version 0.3.1 (Apr 21, 2026)**
+- update DVEFormer citations
+- fix rare crash in DenseVisualEmbeddingTaskHelper when data augmentation led to having no valid embedding index at all
+  for the whole batch
+- fix issue in SceneTaskHelper that ConfusionMatrix in newer torchmetrics versions requires a task argument
+- set default test version to python 3.12 (ubuntu 24.04 default)
+- use new alerts in README.md
 
 **Version 0.3.0 (Oct 15, 2025)**
 - switch from from flat to src layout
