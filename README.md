@@ -288,6 +288,7 @@ Some other stuff that might be useful to you.
 - fix rare crash in DenseVisualEmbeddingTaskHelper when data augmentation led to having no valid embedding index at all
   for the whole batch
 - fix issue in SceneTaskHelper that ConfusionMatrix in newer torchmetrics versions requires a task argument
+- force dynamo = False in torch.onnx.export for now
 - set default test version to python 3.12 (ubuntu 24.04 default)
 - use new alerts in README.md
 

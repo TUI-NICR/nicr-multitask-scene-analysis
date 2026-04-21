@@ -39,6 +39,7 @@ def export_onnx_model(
                       verbose=False,
                       training=training_mode,
                       opset_version=11,
+                      dynamo=False,  # new default true might also work
                       **kwargs)
 
     return True
