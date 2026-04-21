@@ -9,10 +9,10 @@ import warnings
 import torch
 from torch import nn
 from torchvision.models import swin_transformer
-from torchvision.ops import Permute
 
 from nicr_mt_scene_analysis.model.backbone import Backbone
 from nicr_mt_scene_analysis.model.normalization import get_normalization_class
+from nicr_mt_scene_analysis.utils import MPSSafePermute
 
 
 class SwinBackbone(Backbone):
@@ -75,7 +75,7 @@ class SwinBackbone(Backbone):
         self.layer_4 = nn.Sequential(
             model.features[6:8],
             model.norm,
-            Permute((0, 3, 1, 2))
+            MPSSafePermute((0, 3, 1, 2))
         )
 
         # define stages and meta information
