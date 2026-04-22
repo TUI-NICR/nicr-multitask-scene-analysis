@@ -3,6 +3,8 @@
 .. codeauthor:: Daniel Seichter <daniel.seichter@tu-ilmenau.de>
 .. codeauthor:: Soehnke Fischedick <soehnke-benedikt.fischedick@tu-ilmenau.de>
 """
+from typing import Tuple
+
 from functools import wraps
 from importlib import metadata
 
@@ -68,7 +70,7 @@ def mps_cpu_fallback(disabled=False):
 # materializes the permuted tensor once at the layout transition. For unaffected
 # platforms / versions, it behaves like a plain `torch.permute`.
 class MPSSafePermute(torch.nn.Module):
-    def __init__(self, dims: tuple[int, ...]) -> None:
+    def __init__(self, dims: Tuple[int]) -> None:
         super().__init__()
         self._dims = dims
         self._use_mps_workaround = (
