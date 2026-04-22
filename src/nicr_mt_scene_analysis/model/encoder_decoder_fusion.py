@@ -13,6 +13,7 @@ import torch
 from torch import Tensor
 import torch.nn as nn
 
+from ..utils import MPSSafePermute
 from ..utils import partial_class
 from .activation import get_activation_class
 from ..types import EncoderSkipType
@@ -119,6 +120,7 @@ class EncoderDecoderFusionSwin(EncoderDecoderFusion):
             self.ln = get_normalization_class('ln')(n_channels_encoder)
         else:
             self.ln = nn.Identity()
+        self.permute_to_nchw = MPSSafePermute((0, 3, 1, 2))
 
     def forward(
         self,
@@ -142,7 +144,7 @@ class EncoderDecoderFusionSwin(EncoderDecoderFusion):
         x_ = self.ln(x_)
 
         # force NCHW for decoder
-        x_ = torch.permute(x_, (0, 3, 1, 2))
+        x_ = self.permute_to_nchw(x_)
 
         # apply fusion
         return super().forward({self._fuse_features_from: x_}, x_dec)

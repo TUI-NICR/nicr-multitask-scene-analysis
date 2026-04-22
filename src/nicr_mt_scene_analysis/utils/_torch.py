@@ -1,9 +1,14 @@
 # -*- coding: utf-8 -*-
 """
 .. codeauthor:: Daniel Seichter <daniel.seichter@tu-ilmenau.de>
+.. codeauthor:: Soehnke Fischedick <soehnke-benedikt.fischedick@tu-ilmenau.de>
 """
-from functools import wraps
+from typing import Tuple
 
+from functools import wraps
+from importlib import metadata
+
+from packaging.version import Version
 import torch
 
 
@@ -55,6 +60,29 @@ def mps_cpu_fallback(disabled=False):
         return wrapper
 
     return decorator
+
+
+# Torch < 2.12 on MPS can produce incorrect conv results for certain views of
+# channels-last tensors, in particular after NHWC -> NCHW permutes that are
+# followed by channel slicing inside task heads. The affected PyTorch issue is:
+# https://github.com/pytorch/pytorch/issues/180984
+# To avoid carrying this workaround through all forward paths, this module
+# materializes the permuted tensor once at the layout transition. For unaffected
+# platforms / versions, it behaves like a plain `torch.permute`.
+class MPSSafePermute(torch.nn.Module):
+    def __init__(self, dims: Tuple[int]) -> None:
+        super().__init__()
+        self._dims = dims
+        self._use_mps_workaround = (
+            _MPS_AVAILABLE and
+            Version(metadata.version("torch")) < Version("2.12")
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = torch.permute(x, self._dims)
+        if self._use_mps_workaround and x.is_mps:
+            x = x.contiguous()
+        return x
 
 
 def unit_length(x: torch.Tensor, epsilon: float = 1e-7) -> torch.Tensor:

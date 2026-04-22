@@ -101,30 +101,32 @@ class DenseVisualEmbeddingTaskHelper(TaskHelperBase):
         # compute the loss for these pixels (as we don't have a target
         # embedding for them). Therefore, we create a mask and only
         # compute the loss for valid pixels.
-        is_vaid_embedding = [x != 0 for x in target_embedding_indices]
+        is_valid_embedding = [x != 0 for x in target_embedding_indices]
 
         # mask out predictions to only contain pixels with targets as
-        # we can't compue the loss if we dont have the target embedding.
+        # we can't compute the loss if we dont have the target embedding.
         # permute is to convert from nchw to nhwc as we want to mask out
         # spatial but keep embedding vector.
         preds_masked = [
             x.permute(0, 2, 3, 1)[mask]
-            for x, mask in zip(embedding_preds, is_vaid_embedding)
+            for x, mask in zip(embedding_preds, is_valid_embedding)
         ]
 
         # targets are stored as lut + indices, so we need to map
         # the indices to the lut to get the actual target embeddings.
         # we only keep the valid target embeddings.
         # We can only resolve the mapping by iterating over the scale and
-        # batch as we need to combine it elment by element.
+        # batch as we need to combine it element by element.
         # Note: The outer loop is iterating over the different scales.
         targets_masked = []
         for (
             scale_valid_embedding_mask,
+            scale_pred_mask,
             scale_target_embedding_indices,
             scale_target_embedding_lut
         ) in zip(
-            is_vaid_embedding, target_embedding_indices, target_embedding_lut
+            is_valid_embedding, preds_masked,
+            target_embedding_indices, target_embedding_lut
         ):
 
             # shift indices by -1 as 0 was used as placeholder for invalid
@@ -141,18 +143,18 @@ class DenseVisualEmbeddingTaskHelper(TaskHelperBase):
             # to create a joined target embedding we iterate over the batch.
             masked_target_vector = []
             for batch_idx in range(len(scale_target_embedding_lut)):
-                # to save some vram (similar to index+lut) we want to
-                # create the full target vector as late a possible.
-                # because of that we create a mask for the current batch
+                # to save some vram (similar to index+lut), we want to
+                # create the full target vector as late as possible.
+                # because of that, we create a mask for the current batch
                 # element in the current scale.
                 current_batch_element_mask = batch_indices == batch_idx
 
                 # only take element with valid index
                 current_batch_element_indices = keep_valid_indices[current_batch_element_mask]
 
-                # There is a single SUN RGB-D sample which dosn't have
+                # There is a single SUN RGB-D sample which doesn't have
                 # gt annotations. In this case there are no valid indices.
-                # The sample just dons't contribute to the loss, by not getting
+                # The sample just doesn't contribute to the loss, by not getting
                 # appended to keep_target_masked. This creates no alignment
                 # issues as keep_target_masked is just a long vector.
                 # We could instead just append an empty tensor, however
@@ -160,14 +162,27 @@ class DenseVisualEmbeddingTaskHelper(TaskHelperBase):
                 if len(current_batch_element_indices) == 0:
                     continue
 
-                # finaly combine the index with the lut to get a target vector
+                # finally combine the index with the lut to get a target vector
                 # and append it to the masked targets
                 masked_target_vector.append(
                     scale_target_embedding_lut[batch_idx][current_batch_element_indices]
                 )
+
             # make it to an actual torch tensor and append it to the list with
             # different scales.
-            masked_target_vector = torch.cat(masked_target_vector, dim=0)
+            # note that masked_target_vector might be an empty list in some edge
+            # cases, e.g., data augmentation can lead to having no valid
+            # embedding index for the whole batch (making the batch effectively
+            # irrelevant for training of DVE). However, the batch might
+            # contribute to other tasks in multi task settings. This is why
+            # we don't skip the whole batch but instead we handle the case and
+            # just compute an loss of 0 for this batch. This is achieved by
+            # cloning the empty pred masked vector to maintain same tensor
+            # dimensions.
+            if len(masked_target_vector) == 0:
+                masked_target_vector = torch.empty_like(scale_pred_mask)
+            else:
+                masked_target_vector = torch.cat(masked_target_vector, dim=0)
             targets_masked.append(masked_target_vector)
 
         # Compute losses on masked elements

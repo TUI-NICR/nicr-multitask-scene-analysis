@@ -23,3 +23,4 @@ from ._printing import cprint_step
 
 from ._torch import to_cpu_if_mps_tensor
 from ._torch import mps_cpu_fallback
+from ._torch import MPSSafePermute
