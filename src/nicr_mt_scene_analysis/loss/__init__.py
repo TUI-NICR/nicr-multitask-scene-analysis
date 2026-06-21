@@ -5,7 +5,9 @@
 .. codeauthor:: Robin Schmidt <robin.schmidt@tu-ilmenau.de>
 """
 
+from .bce import BinaryCrossEntropyWithLogitsLoss
 from .ce import CrossEntropyLossSemantic
+from .dice import DiceLoss
 from .l1 import L1Loss
 from .mse import MSELoss
 from .vonmises import VonMisesLossBiternion

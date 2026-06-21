@@ -8,9 +8,10 @@ from ._torch import unit_length
 
 
 class NormalOutputNormalization(torch.nn.Module):
-    def __init__(self, epsilon=1e-7) -> None:
+    def __init__(self, epsilon=1e-7, dim: int = 1) -> None:
         self._epsilon = epsilon
+        self._dim = dim
         super().__init__()
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return unit_length(x, self._epsilon)
+        return unit_length(x, self._epsilon, dim=self._dim)

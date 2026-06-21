@@ -19,6 +19,9 @@ from .encoder_fusion import get_encoder_fusion_class
 from .normalization import get_normalization_class
 
 
+ENCODER_META_KEY = '_encoder_meta'
+
+
 class EncoderBase(abc.ABC, nn.Module):
     def __init__(self) -> None:
         super().__init__()
@@ -275,6 +278,7 @@ def get_encoder(
 ) -> EncoderType:
     # create encoder(s), i.e., fused rgb+depth, rgbd (rgb+depth with a single
     # backbone), or single modality: rgb or depth
+    # dense encoders only. token-aware models use get_token_encoder.
 
     if (backbone_rgb is not None and backbone_depth is not None):
         # fused dual-modality RGB-D encoder

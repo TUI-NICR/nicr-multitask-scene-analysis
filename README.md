@@ -7,13 +7,14 @@ It contains essential functions for:
 - scene classification
 - dense visual embedding prediction (i.e. text aligned pixelwise embeddings)
 
-with ResNet / Swin Transformer based encoder-decoder architectures processing RGB / Depth / RGB-D inputs.
+with ResNet / Swin Transformer / Vision Transformer based encoder-decoder architectures processing RGB / Depth / RGB-D inputs.
 
 The repository builds upon the [NICR Scene Analysis Datasets](https://github.com/TUI-NICR/nicr-scene-analysis-datasets) repository and is used in our projects:
 - [EMSANet](https://github.com/TUI-NICR/EMSANet)
 - [EMSAFormer](https://github.com/TUI-NICR/EMSAFormer)
 - [Panoptic Mapping](https://github.com/TUI-NICR/panoptic-mapping)
 - [DVEFormer](https://github.com/TUI-NICR/DVEFormer)
+- [IRSAFormer](https://github.com/TUI-NICR/IRSAFormer)
 
 > [!NOTE]
 > Note that this package is used in ongoing research projects and will be extended and maintained as needed. Backward compatibility might be broken in new versions.
@@ -23,6 +24,26 @@ The source code is published under Apache 2.0 license, see [license file](LICENS
 
 If you use the source code, please cite the paper related to your work:
 ---
+**Efficient Indoor Robotic Scene Analysis with Encoder-Centric Vision Transformers** (IJCNN 2026, *to appear*):
+> Fischedick, S., Stephan, B., Seichter, D., Gross, H.-M.
+*Efficient Indoor Robotic Scene Analysis with Encoder-Centric Vision Transformers*,
+in IEEE International Joint Conference on Neural Networks (IJCNN), 2026.
+
+<details>
+<summary>BibTeX</summary>
+
+```bibtex
+@inproceedings{irsaformer2026ijcnn,
+  title     = {{Efficient Indoor Robotic Scene Analysis with Encoder-Centric Vision Transformers}},
+  author    = {Fischedick, S{\"o}hnke and Stephan, Benedict and Seichter, Daniel and Gross, Horst-Michael},
+  booktitle = {IEEE International Joint Conference on Neural Networks (IJCNN)},
+  year      = {2026}
+}
+```
+</details>
+
+---
+
 **Efficient Prediction of Dense Visual Embeddings via Distillation and RGB-D Transformers** ([IEEE Xplore](https://ieeexplore.ieee.org/document/11245809), [arXiv](https://arxiv.org/abs/2601.00359)):
 > Fischedick, S., Seichter, D., Stephan, B., Schmidt, R., Gross, H.-M.
 *Efficient Prediction of Dense Visual Embeddings via Distillation and RGB-D Transformers*, in
@@ -120,7 +141,7 @@ The code was tested with PyTorch 2.10 (and earlier with 1.10, 1.13, 2.0, 2.3, 2.
 # - PyTorch, TorchVision (see note above)
 # - NICR Scene Analysis Datasets (see below)
 # - all remaining dependencies are installed automatically
-python -m pip install "git+https://github.com/TUI-NICR/nicr-scene-analysis-datasets.git@v0.9.0"
+python -m pip install "git+https://github.com/TUI-NICR/nicr-scene-analysis-datasets.git@v0.9.1"
 
 # option 1: directly install to your site packages
 python -m pip install "git+https://github.com/TUI-NICR/nicr-multitask-scene-analysis.git"
@@ -131,15 +152,16 @@ cd /path/to/this/repository
 python -m pip install -e "./"
 ```
 
-If you want pip to also install the optional requirement sets we provide for PyTorch (`withtorch`) and OpenCV (`withopencv`), append the extras to the package specifier. 
-You can choose either extra individually or combine both:
+If you want pip to also install optional requirements, append extras to the package specifier.
+We provide extras for PyTorch (`withtorch`), OpenCV (`withopencv`), and the ViT-based token pipeline (`withvit`).
+You can choose any extra individually or combine them:
 
 ```bash
 # option 1: direct install in your site packages with extras
-python -m pip install "nicr-mt-scene-analysis[withtorch,withopencv] @ git+https://github.com/TUI-NICR/nicr-multitask-scene-analysis.git"
+python -m pip install "nicr-mt-scene-analysis[withtorch,withopencv,withvit] @ git+https://github.com/TUI-NICR/nicr-multitask-scene-analysis.git"
 
 # option 2: editable install with extras
-python -m pip install -e "./[withtorch,withopencv]"
+python -m pip install -e "./[withtorch,withopencv,withvit]"
 ```
 
 Note, if you use this repository along with our other projects, please follow the installation instructions given there. This ensures installing the correct version.
@@ -156,7 +178,7 @@ This repository provides some core functionality for multi-task scene analysis.
 In the following section, some major components are listed ordered by their folder structure in the repository.
 
 ### Preprocessing
-For preparing network inputs, different preprocessing and augmentation steps are required. Similar to [NICR Scene Analysis Datasets](https://github.com/TUI-NICR/nicr-scene-analysis-datasets), all preprocessors work inplace on a dict of inputs. Except of `TorchTransformWrapper` all processing steps are implemented using NumPy (not PyTorch).  
+For preparing network inputs, different preprocessing and augmentation steps are required. Similar to [NICR Scene Analysis Datasets](https://github.com/TUI-NICR/nicr-scene-analysis-datasets), all preprocessors work inplace on a dict of inputs. Except of `TorchTransformWrapper` all processing steps are implemented using NumPy (not PyTorch).
 This package implements the following preprocessing modules:
 - `CloneEntries`: Clones specific keys to an extra field in the input dict. This can be helpful if data should be kept without preprocessing.
 - `DenseVisualEmbeddingTargetGenerator`: Uses panoptic segmentation generated by `PanopticTargetGenerator`  and embeddings provided along with the samples to generate an embedding lookup table and a dense index image. These can be combined to a dense visual embedding image e.g. for knowledge distillation.
@@ -169,6 +191,8 @@ This package implements the following preprocessing modules:
 - `NormalizeRGB`: Normalizes the RGB image with an ImageNet mean and std.
 - `OrientationTargetGenerator`: Generates a dense orientation image that is required for loss computation.
 - `PanopticTargetGenerator`: Combines both semantic and instance segmentation and converts it to a panoptic segmentation encoding.
+- `PanopticTokenMaskTargetGenerator`: Generates per-instance binary mask targets from panoptic ground truth for the token-based pipeline.
+- `SemanticTokenMaskTargetGenerator`: Generates per-class binary mask targets from semantic ground truth for the token-based pipeline.
 - `RandomCrop`: Randomly crops the input to a specific width and height. This can be used for augmentation of the training data. Note, the same cropping is automatically applied to all spatial keys in the dict.
 - `RandomHSVJitter`: Randomly adds a color jitter to the input RGB image in HSV space.
 - `RandomHorizontalFlip`: Flips the image randomly at the horizontal axis for augmentation of the training data. Note, the same flipping is automatically applied to all spatial keys and given orientations in the dict.
@@ -182,8 +206,10 @@ This package implements the following preprocessing modules:
 
 ### Loss
 The different tasks require different loss computations. The following classes are provided:
+- `BinaryCrossEntropyWithLogitsLoss`: Computes the binary cross entropy loss for mask prediction in the token-based pipeline.
 - `CrossEntropyLossSemantic`: Computes the cross entropy loss for the semantic segmentation.
 - `CosineEmbeddingLoss`: Computes the cosine distance loss for the dense visual embedding prediction.
+- `DiceLoss`: Computes the dice loss for mask prediction in the token-based pipeline.
 - `L1Loss`: Computes the L1 loss that can be used, e.g., for instance offset loss computation.
 - `MSELoss`: Computes the MSE loss that can be used, e.g., for instance center loss computation.
 - `VonMisesLossBiternion`: Computes a dense version of the [VonMisesLoss](https://link.springer.com/chapter/10.1007/978-3-319-24947-6_13) in biternion encoding. This can be used for computing the loss for instance orientation estimation.
@@ -211,6 +237,7 @@ For exporting Swin Transformer backbones, see: [EMSAFormer](https://github.com/T
 - `ResNetSEBackbone`: Same as `ResNetBackbone` but with channel-wise squeeze-and-excitation (SE) at the end of each stage.
 - `SwinBackbone`: Implements the Swin Transformer and Swin Transformer v2 backbone.
 - `SwinMultimodalBackbone`: Similar as `SwinBackbone` but with modifications to support multimodal (RGBD) input in a single backbone.
+- `DinoV2Backbone` / `DinoV3Backbone` / `DeiT3Backbone` / `Eva02Backbone`: Vision Transformer backbones via PyTorch Image Models (timm) for the token-based pipeline (Python > 3.8), with optional RGB-D early fusion via separate RGB and depth patch projections.
 
 #### Block
 - `BasicBlock`: Basic block of ResNet v1.
@@ -233,10 +260,19 @@ pixelwise embedding with multi-scale output heads.
 - `SceneClassificationDecoder`: MLP-based decoder (single layer) for scene classification.
 - `SemanticDecoder`: Convolution-based decoder for semantic segmentation with multi-scale output heads.
 - `SemanticMLPDecoder`: Same as `SemanticDecoder` but MLP-based (similar to SegFormer).
+- `TokenEmbeddingDecoder`: Token-based decoder for dense visual embedding prediction.
+- `TokenImageEmbeddingDecoder`: Token-based decoder for image-level (scene) embedding prediction.
+- `TokenMaskDecoder`: Token-based decoder that predicts per-query binary masks (EoMT-style).
+- `TokenOrientationDecoder`: Token-based decoder for per-instance orientation estimation.
+- `TokenPanopticDecoder`: Token-based decoder for panoptic segmentation, combining mask and class predictions.
+- `TokenSceneDecoder`: Token-based decoder for scene classification.
+- `TokenSemanticDecoder`: Token-based decoder for semantic segmentation.
 
 #### Encoder
 - `Encoder`: Wrapper for a single backbone (RGB/depth/RGBD), which also handles creating all skip connections from encoder to the task-specific decoders.
 - `FusedRGBDEncoder`: Similar wrapper as `Encoder` that combines two backbones (RGB and depth) in order to create a multi-modality fused encoder, which also handles fusing both modalities at certain stages.
+- `TokenEncoder`: Variant of `Encoder` for token-based (ViT) backbones. In addition to the regular skip connections, it carries query tokens through the backbone stages so the token-based decoders can reuse them as prediction queries.
+- `FusedTokenEncoder`: Variant of `FusedRGBDEncoder` for token-based backbones with the same token-carrying behavior as `TokenEncoder`.
 
 #### Encoder-Decoder-Fusion
 - `EncoderDecoderFusion`: A generic encoder-decoder fusion module that takes a fusion operation and source modality as arguments to fuse features from encoder to decoder. Note if the number of channels in the decoder is different, an additional 1x1 conv is added to adjust the number of channels of the encoder features.
@@ -244,6 +280,10 @@ pixelwise embedding with multi-scale output heads.
 
 #### Encoder-Fusion
 - `EncoderRGBDFusionWeightedAdd`: Simple channel-wise fusion between the two modalities in `FusedRGBDEncoder`. This can be done unidirectional or bidirectional and can be a simple addition or a channel-wise squeeze-and-excitation weighted addition.
+- `TokenEncoderRGBDFusionWeightedAdd`: Token-aware counterpart of `EncoderRGBDFusionWeightedAdd` used in `FusedTokenEncoder` (uses `TokenSqueezeAndExcitation` for the SE variant).
+
+#### Attention Controller
+- `EOMTAttentionMaskController`: Controls at which backbone stages (and with which schedule/probability) masked self-attention between query tokens and patch tokens is applied. Used by `TokenEncoder` / `FusedTokenEncoder` to implement the EoMT-style training schedule.
 
 #### Postprocessing
 - `InstancePostprocessing`: Handles resizing and combining predicted instance centers and instance offsets to an instance segmentation based on a given (ground-truth) foreground mask. Moreover, if the orientation estimation task is present, it also handles deriving instance orientations for given (ground-truth) instances as well as the predicted instances. Note that the aforementioned postprocessing is only computed during validation in the training process. For inference, the foreground mask derived from semantic segmentation is used (see `PanopticPostprocessing`).
@@ -252,6 +292,12 @@ pixelwise embedding with multi-scale output heads.
 - `ScenePostprocessing`: Handles postprocessing the raw outputs of the scene classification decoder, i.e., applies softmax and determines the argmax.
 - `SemanticPostprocessing`: Handles resizing and postprocessing the raw outputs of the semantic decoder, i.e., applies softmax and determines the argmax.
 - `DenseVisualEmbeddingPostprocessing`: Computes cosine similarity between the output embeddings and semantic text embeddings. The output is used to retrive semantic segmentation predictions with softmax and argmax.
+- `TokenMaskPostprocessing`: Handles resizing and combining the predicted mask logits and class logits of the token-based mask decoder.
+- `TokenSemanticPostprocessing`: Derives semantic segmentation from token-based mask and class predictions.
+- `TokenPanopticPostprocessing`: Derives panoptic segmentation from token-based mask and class predictions.
+- `TokenOrientationPostprocessing`: Derives per-instance orientations for the token-based pipeline.
+- `TokenVisualEmbeddingPostprocessing`: Postprocessing for token-based dense visual embedding prediction (text/visual-mean based semantic retrieval).
+- `TokenImageEmbeddingPostprocessing`: Postprocessing for token-based image-level (scene) embedding prediction.
 
 #### Upsampling
 - `Upsampling`: Implements nearest and bilinear upsampling as well as our proposed learned upsampling. Note that the learned upsampling is always done by a factor of 2. Use multiple modules for larger factors.
@@ -267,6 +313,12 @@ Note, no additional loss is calculated.
 - `SceneTaskHelper`: Task helper for scene classification. Computes the cross entropy loss and the (balanced) accuracy Acc/bAcc.
 - `SemanticTaskHelper`: Task helper for semantic segmentation. Computes the cross entropy loss and the mIoU.
 - `DenseVisualEmbeddingTaskHelper`: Task helper for dense visual embedding prediction. Computes the cosine embedding loss for knowledge distillation as well as the mIoU for text-based and visual-mean based semantic segmentation.
+- `TokenMaskTaskHelper`: Task helper for token-based mask prediction. Computes BCE/Dice mask losses and cross entropy class loss with Hungarian matching between predicted queries and ground-truth masks (requires `transformers`).
+- `TokenSemanticTaskHelper`: Task helper for token-based semantic segmentation. Computes the mIoU on top of the merged token mask/class predictions.
+- `TokenPanopticTaskHelper`: Task helper for token-based panoptic segmentation. Computes PQ/RQ/SQ and mIoU on top of the merged token mask/class predictions.
+- `TokenOrientationTaskHelper`: Task helper for token-based instance orientation estimation. Computes the VonMises loss against matched queries and MAAE in validation.
+- `TokenEmbeddingTaskHelper`: Task helper for token-based dense visual embedding prediction (per-mask embeddings).
+- `TokenSceneTaskHelper`: Task helper for token-based scene classification (image-level token).
 
 ### Visualization
 Functions for visualizing the ground truth and prediction for each task.
@@ -282,6 +334,21 @@ Some other stuff that might be useful to you.
 
 > [!NOTE]
 > Most relevant changes are listed below. Note that backward compatibility might be broken.
+
+**Version 0.4.0 (June 21, 2026)**
+- add IRSAFormer references
+- add a token-based (EoMT-style) prediction pipeline:
+  - token decoders for mask, semantic, panoptic, scene, orientation, and visual/image embedding prediction
+  - token task helpers (Hungarian matching) for mask, semantic, panoptic, orientation, scene, and visual/image embedding prediction
+  - token postprocessing for mask, semantic, panoptic, orientation, and visual/image embedding prediction
+  - `TokenEncoder` / `FusedTokenEncoder` to carry query tokens through ViT backbones, with `EOMTAttentionMaskController` to schedule masked self-attention per stage
+  - token-based preprocessing
+- add Vision Transformer backbones via PyTorch Image Models (timm, Python > 3.8): DINOv2, DINOv3, DeiT3, and EVA-02
+- add RGB-D early fusion with separate RGB and depth patch projections for ViT backbones (in contrast to the dual-backbone RGB-D fusion provided by `FusedRGBDEncoder`)
+- add BCE and Dice losses for mask prediction
+- add `TokenSqueezeAndExcitation` to support squeeze-and-excitation for ViT-based encoders
+- add GeLU activation
+- add `reduction='mean'` support to `VonMisesLossBiternion`
 
 **Version 0.3.1 (Apr 21, 2026)**
 - update DVEFormer citations

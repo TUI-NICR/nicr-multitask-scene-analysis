@@ -48,6 +48,16 @@ optional-dependencies.withopencv = { file = [
 optional-dependencies.withtorch = { file = [
     "requirements/torch.txt"
 ] }
+optional-dependencies.withtimm = { file = [
+    "requirements/timm.txt"
+] }
+optional-dependencies.withtransformers = { file = [
+    "requirements/transformers.txt"
+] }
+optional-dependencies.withvit = { file = [
+    "requirements/timm.txt",
+    "requirements/transformers.txt"
+] }
 
 # linting ----------------------------------------------------------------------
 [tool.ruff]

@@ -50,6 +50,10 @@ class ToTorchTensors(PreprocessingBase):
                     # image_embeddings are always ndim==1 and should still
                     # get converted to torch.Tensor.
                     pass
+                elif 'token' in key:
+                    # token labels are always ndim==1 and should still
+                    # get converted to torch.Tensor.
+                    pass
                 else:
                     raise ValueError(f"Cannot handle entry '{key}' with "
                                      f"shape '{value.shape}'")

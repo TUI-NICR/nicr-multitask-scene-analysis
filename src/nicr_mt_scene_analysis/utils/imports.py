@@ -21,9 +21,10 @@ def is_opencv_available(
         min_version=min_version,
         additional_error_msg=(
             "Please install your preferred OpenCV version yourself or "
-            "re-install the nicr-mt-scene-analysis package with the "
+            "re-install the local nicr-mt-scene-analysis checkout with the "
             "additional 'withopencv' target to install a default version, "
-            "i.e., `pip install nicr-mt-scene-analysis[withopencv]`."
+            "i.e., `python -m pip install -e "
+            "'./nicr-mt-scene-analysis[withopencv]'`."
         )
     )
 
@@ -37,9 +38,10 @@ def is_torch_available(
         min_version=min_version,
         additional_error_msg=(
             "Please install your preferred PyTorch version yourself or "
-            "re-install the nicr-mt-scene-analysis package with the "
+            "re-install the local nicr-mt-scene-analysis checkout with the "
             "additional 'withtorch' target to install a default version, "
-            "i.e., `pip install nicr-mt-scene-analysis[withtorch]`."
+            "i.e., `python -m pip install -e "
+            "'./nicr-mt-scene-analysis[withtorch]'`."
         )
     )
 
@@ -53,9 +55,10 @@ def is_torchvision_available(
         min_version=min_version,
         additional_error_msg=(
             "Please install your preferred TorchVision version yourself or "
-            "re-install the nicr-mt-scene-analysis package with the "
+            "re-install the local nicr-mt-scene-analysis checkout with the "
             "additional 'withtorch' target to install a default version, "
-            "i.e., `pip install nicr-mt-scene-analysis[withtorch]`."
+            "i.e., `python -m pip install -e "
+            "'./nicr-mt-scene-analysis[withtorch]'`."
         )
     )
 
@@ -69,9 +72,10 @@ def is_torchmetrics_available(
         min_version=min_version,
         additional_error_msg=(
             "Please install your preferred TorchMetrics version yourself or "
-            "re-install the nicr-mt-scene-analysis package with the "
+            "re-install the local nicr-mt-scene-analysis checkout with the "
             "additional 'withtorch' target to install a default version, "
-            "i.e., `pip install nicr-mt-scene-analysis[withtorch]`."
+            "i.e., `python -m pip install -e "
+            "'./nicr-mt-scene-analysis[withtorch]'`."
         )
     )
 

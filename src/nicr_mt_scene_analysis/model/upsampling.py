@@ -2,23 +2,89 @@
 """
 .. codeauthor:: Mona Koehler <mona.koehler@tu-ilmenau.de>
 .. codeauthor:: Daniel Seichter <daniel.seichter@tu-ilmenau.de>
+.. codeauthor:: Soehnke Fischedick <soehnke-benedikt.fischedick@tu-ilmenau.de>
 """
 from typing import Any, Optional, Tuple, Type, Union
+import warnings
 
 import torch
 from torch import nn
 from torch import Tensor
 from torch.nn.functional import interpolate
+from torch.nn.functional import layer_norm
 
 from ..utils import partial_class
+
+
+class LayerNorm2d(nn.LayerNorm):
+    # per-channel LayerNorm on (B, C, H, W) tensors. nn.LayerNorm only
+    # normalizes the last dim, so we permute to channels-last before the
+    # functional call and back afterwards.
+    def forward(self, x: Tensor) -> Tensor:
+        return layer_norm(
+            x.permute(0, 2, 3, 1),
+            self.normalized_shape, self.weight, self.bias, self.eps,
+        ).permute(0, 3, 1, 2).contiguous()
 
 
 KNOWN_UPSAMPLING_METHODS = (
     'nearest',    # nearest interpolation
     'bilinear',    # bilinear interpolation
     'learned-3x3',    # nearest + reflection padding + depth-wise conv
-    'learned-3x3-zeropad'    # nearest + zero padding + depth-wise conv
+    'learned-3x3-zeropad',    # nearest + zero padding + depth-wise conv
+    'transposed-conv',    # transposed conv + GELU + depthwise conv + LayerNorm2d
 )
+
+
+class TransposedConvUpsampling(nn.Module):
+    # learned 2x upsampling block as described in EoMT (Kerssies et al., CVPR
+    # 2025), which follows ViTDet's transposed-convolution upscaling (Li et
+    # al., ECCV 2022). A 2x2 transposed convolution with stride 2, GELU, a
+    # depthwise 3x3 convolution, and a final per-channel norm.
+    def __init__(
+        self,
+        n_channels: int,
+        mode: str = 'transposed-conv',  # to match signature of Upsampling
+        scale_factor: Union[float, Tuple[float, float]] = 2.,
+        use_bias: bool = True
+    ):
+        super().__init__()
+
+        if mode != 'transposed-conv':
+            warnings.warn(
+                f"TransposedConvUpsampling ignores mode='{mode}' and always "
+                "performs learned upsampling."
+            )
+        if scale_factor not in (2., (2., 2.)):
+            warnings.warn(
+                "TransposedConvUpsampling currently upsamples by a factor of "
+                "2. The provided scale_factor argument is ignored."
+            )
+
+        self.conv1 = nn.ConvTranspose2d(
+            n_channels,
+            n_channels,
+            kernel_size=2,
+            stride=2,
+            bias=use_bias
+        )
+        self.act = nn.GELU()
+        self.conv2 = nn.Conv2d(
+            n_channels,
+            n_channels,
+            kernel_size=3,
+            padding=1,
+            groups=n_channels,
+            bias=False,
+        )
+        self.norm = LayerNorm2d(n_channels)
+
+    def forward(self, x: Tensor) -> Tensor:
+        x = self.conv1(x)
+        x = self.act(x)
+        x = self.conv2(x)
+        x = self.norm(x)
+        return x
 
 
 class Upsampling(nn.Module):
@@ -27,7 +93,7 @@ class Upsampling(nn.Module):
         mode: str,
         n_channels: int,
         scale_factor: Union[float, Tuple[float, float]] = 2.,
-        use_bias: bool = True,
+        use_bias: bool = True
     ) -> None:
         super().__init__()
 
@@ -110,6 +176,8 @@ def get_upsampling_class(
     name = name.lower()
     if name not in KNOWN_UPSAMPLING_METHODS:
         raise ValueError(f"Unknown upsampling: '{name}'")
-    kwargs['mode'] = name
+    if name == 'transposed-conv':
+        return partial_class(TransposedConvUpsampling, **kwargs)
 
+    kwargs['mode'] = name
     return partial_class(Upsampling, **kwargs)
