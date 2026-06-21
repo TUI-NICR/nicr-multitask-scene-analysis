@@ -90,11 +90,24 @@ class _Mask2FormerLossWrapper(Mask2FormerLoss):
         mask_labels: Sequence[torch.Tensor],
         indices: Sequence[Tuple[torch.Tensor, torch.Tensor]]
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        src_idx = self._get_predictions_permutation_indices(indices)
-        tgt_idx = self._get_targets_permutation_indices(indices)
-        pred_masks = masks_queries_logits[src_idx]
-        target_masks, _ = self._pad_images_to_max_in_batch(list(mask_labels))
-        target_masks = target_masks[tgt_idx]
+        pred_masks = []
+        target_masks = []
+        n_matched_per_sample = []
+        for sample_idx, (src_indices, tgt_indices) in enumerate(indices):
+            if src_indices.numel() == 0:
+                continue
+            pred_masks.append(masks_queries_logits[sample_idx, src_indices])
+            # Padding all GT masks can be very expensive for images with many
+            # panoptic segments, while the loss only uses matched targets.
+            target_masks.append(mask_labels[sample_idx][tgt_indices])
+            n_matched_per_sample.append(int(tgt_indices.numel()))
+
+        pred_masks = torch.cat(pred_masks, dim=0)
+        target_masks, _ = self._pad_images_to_max_in_batch(target_masks)
+        target_masks = torch.cat([
+            sample[:n_matched]
+            for sample, n_matched in zip(target_masks, n_matched_per_sample)
+        ], dim=0)
         pred_masks = pred_masks[:, None]
         target_masks = target_masks[:, None]
         return pred_masks, target_masks
