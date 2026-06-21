@@ -2,13 +2,13 @@
 """
 .. codeauthor:: Mona Koehler <mona.koehler@tu-ilmenau.de>
 .. codeauthor:: Daniel Seichter <daniel.seichter@tu-ilmenau.de>
+.. codeauthor:: Soehnke Fischedick <soehnke-benedikt.fischedick@tu-ilmenau.de>
 """
 from typing import Type, Union
 
 from torch import Tensor
 import torch.nn as nn
 import torch.nn.functional as F
-
 
 from .activation import get_activation_class
 from .normalization import get_normalization_class
@@ -39,7 +39,6 @@ def conv1x1(
                      kernel_size=1,
                      stride=stride,
                      bias=False)
-
 
 class ConvNormAct(nn.Sequential):
     def __init__(
@@ -110,3 +109,29 @@ class SqueezeAndExcitationTensorRT(SqueezeAndExcitation):
         weighting = self.fc(weighting)
         y = x * weighting
         return y
+
+
+class TokenSqueezeAndExcitation(nn.Module):
+    def __init__(
+        self,
+        embed_dim: int,
+        reduction: int = 16,
+        activation: Type[nn.Module] = get_activation_class()
+    ):
+        super().__init__()
+
+        embed_dim_red = embed_dim // reduction
+        assert embed_dim_red > 0
+
+        self.layers = nn.Sequential(
+            nn.Linear(embed_dim, embed_dim_red),
+            activation(),
+            nn.Linear(embed_dim_red, embed_dim),
+            nn.Sigmoid()
+        )
+
+    def forward(self, x: Tensor) -> Tensor:
+        # x: [B, N, D]
+        weighting = x.mean(dim=1)          # [B, D]
+        weighting = self.layers(weighting) # [B, D]
+        return x * weighting.unsqueeze(1)  # [B, N, D]

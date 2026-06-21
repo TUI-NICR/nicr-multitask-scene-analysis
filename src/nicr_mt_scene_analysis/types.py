@@ -15,10 +15,16 @@ BatchType = Dict[str, Any]
 
 # encoder
 EncoderForwardType = Dict[str, Tensor]    # modality: features
+EncoderTokenForwardType = Dict[str, Tensor]    # modality: extra tokens
 EncoderInputType = EncoderForwardType
+EncoderTokenInputType = EncoderTokenForwardType
 EncoderSkipType = EncoderForwardType
 EncoderSkipsType = Dict[str, EncoderSkipType]    # downsampling: skip features
-EncoderOutputType = Tuple[EncoderForwardType, EncoderSkipsType]
+EncoderOutputTypePlain = Tuple[EncoderForwardType, EncoderSkipsType]
+EncoderOutputTypeExtraTokens = Tuple[EncoderForwardType,
+                                     EncoderSkipsType,
+                                     EncoderTokenForwardType]
+EncoderOutputType = Union[EncoderOutputTypePlain, EncoderOutputTypeExtraTokens]
 
 # context module
 ContextModuleInputType = Tensor
@@ -47,6 +53,8 @@ DecoderRawOutputType = Tuple[
 ]
 DecoderPostprocessedOutputType = Dict[str, Any]
 DecoderOutputType = Union[DecoderRawOutputType, DecoderPostprocessedOutputType]
+
+TokenDecoderInputType = EncoderOutputTypeExtraTokens
 
 # postprocessing
 PostprocessingOutputType = DecoderPostprocessedOutputType

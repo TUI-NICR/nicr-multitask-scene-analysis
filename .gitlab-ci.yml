@@ -46,7 +46,15 @@ stages:
         - python -m pip install 'torchmetrics<=1.8.2'
 
         # install package (and all missing dependencies)
-        - python -m pip  install -q --editable .[test]
+        # timm-based backbones (e.g. DINOv3) require Python >= 3.9, so the vit
+        # extra (timm + transformers) is only installed on newer Python. On
+        # py3.8 the timm-based tests are skipped.
+        - |
+          if [ "${PYTHON_VERSION_TO_USE}" == "3.8" ]; then
+            python -m pip install -q --editable .[test]
+          else
+            python -m pip install -q --editable .[test,withvit]
+          fi
 
         # check conda installation
         - conda info

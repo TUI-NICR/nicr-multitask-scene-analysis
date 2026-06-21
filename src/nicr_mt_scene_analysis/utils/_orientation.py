@@ -48,10 +48,11 @@ def biternion2deg(biternion: torch.Tensor) -> torch.Tensor:
 
 
 class OrientationOutputNormalization(torch.nn.Module):
-    def __init__(self, epsilon=1e-7) -> None:
+    def __init__(self, epsilon=1e-7, dim: int = 1) -> None:
         self._epsilon = epsilon
+        self._dim = dim
         super().__init__()
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # normalize to: sin(phi)**2 + cos(phi)**2 = 1 (unit circle)
-        return unit_length(x, self._epsilon)
+        return unit_length(x, self._epsilon, dim=self._dim)

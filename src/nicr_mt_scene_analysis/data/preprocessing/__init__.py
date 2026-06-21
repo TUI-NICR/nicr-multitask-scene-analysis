@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 .. codeauthor:: Daniel Seichter <daniel.seichter@tu-ilmenau.de>
+.. codeauthor:: Soehnke Fischedick <soehnke-benedikt.fischedick@tu-ilmenau.de>
 """
 from .base import AppliedPreprocessingMeta
 from .base import PreprocessingParameterDict
@@ -23,6 +24,8 @@ from .resize import Resize
 from .rgb import RandomHSVJitter
 from .scale import ScaleDepth
 from .semantic import SemanticClassMapper
+from .token import PanopticTokenMaskTargetGenerator
+from .token import SemanticTokenMaskTargetGenerator
 from .torch import ToTorchTensors
 from .torch_transform_wrapper import TorchTransformWrapper
 from .utils import KeyCleaner

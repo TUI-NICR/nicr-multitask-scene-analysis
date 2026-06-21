@@ -19,7 +19,7 @@ class VonMisesLossBiternion(LossBase):
     def __init__(self, reduction: str = 'sum', kappa: float = 1.0) -> None:
         super().__init__()
 
-        assert reduction in ('sum', 'none')
+        assert reduction in ('sum', 'mean', 'none')
 
         self._kappa = kappa
         self._reduction = reduction
@@ -47,5 +47,7 @@ class VonMisesLossBiternion(LossBase):
         n_elements = score.numel()
         if 'sum' == self._reduction:
             score = score.sum()
+        elif 'mean' == self._reduction:
+            score = score.mean()
 
         return score, n_elements

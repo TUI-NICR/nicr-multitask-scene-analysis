@@ -10,6 +10,7 @@ from ..utils import partial_class
 
 
 KNOWN_ACTIVATIONS = [
+    'gelu',
     'relu',
     'silu', 'swish'
 ]
@@ -28,7 +29,9 @@ def get_activation_class(
     if name not in KNOWN_ACTIVATIONS:
         raise ValueError(f"Unknown activation: '{name}'")
 
-    if 'relu' == name:
+    if 'gelu' == name:
+        cls = nn.GELU
+    elif 'relu' == name:
         cls = nn.ReLU
     elif name in ['swish', 'silu']:
         cls = nn.SiLU

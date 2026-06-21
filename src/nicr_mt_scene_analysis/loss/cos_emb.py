@@ -3,7 +3,7 @@
 .. codeauthor:: Robin Schmidt <robin.schmidt@tu-ilmenau.de>
 .. codeauthor:: Soehnke Fischedick <soehnke-benedikt.fischedick@tu-ilmenau.de>
 """
-from typing import Optional, Tuple
+from typing import Tuple
 
 import torch
 
@@ -21,20 +21,16 @@ class CosineEmbeddingLoss(LossBase):
     def _compute_loss(
         self,
         input_: torch.Tensor,
-        target: torch.Tensor,
-        target_similarity: Optional[torch.Tensor] = None
+        target: torch.Tensor
     ) -> Tuple[torch.Tensor, int]:
 
         # Pytorch computes the loss between two inputs (input_ and target)
         # and requires a target label for each pair of inputs to indicate
         # if the pair should be considered similar (label = 1)
         # or unsimilar (label = -1).
-        # If no target_similarity is given, we assume that each pair of inputs
-        # should be considered similar (label = 1).
-        if target_similarity is None:
-            # if target_labels is not given assume that each entry in 'targets' corresponds
-            # to one entry in 'input_' -> simply pass ones() as labels to CosineEmbeddingLoss
-            target_similarity = torch.ones(target.shape[0]).to(target.device)
+        # Each entry in 'target' corresponds to one entry in 'input_', so all
+        # pairs are considered similar (label = 1).
+        target_similarity = torch.ones(target.shape[0]).to(target.device)
 
         # Compute the loss
         loss = self._loss(input_, target, target_similarity)

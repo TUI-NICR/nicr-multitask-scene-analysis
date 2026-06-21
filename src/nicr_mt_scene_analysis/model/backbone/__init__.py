@@ -18,6 +18,7 @@ from ..block import Bottleneck
 from ..block import get_block_class
 from ..normalization import get_normalization_class
 from .base import Backbone
+from .base import TokenBackbone
 from .resnet import get_resnet_backbone
 
 # Check the torchvision version, as the Swin Transformer V2 models are only
@@ -31,7 +32,6 @@ else:
     warnings.warn("Could not import Swin Transformer V2 models as the "
                   "installed torchvision version is too old. Please update "
                   "torchvision to version 0.14.0 or later.")
-
 
 KNOWN_BACKBONES = [
     # ResNet (v1)
@@ -55,6 +55,68 @@ if IS_SWIN_AVAILABLE:
         'swin-multi-t-v2', 'swin-multi-s-v2', 'swin-multi-b-v2',
         'swin-multi-t-128', 'swin-multi-t-v2-128'
     ]
+
+
+KNOWN_TIMM_TOKEN_BACKBONES = (
+    # Timm DINOv2-based backbones
+    'dinov2_small',
+    'dinov2_small_reg4',
+    'dinov2_base',
+    'dinov2_base_reg4',
+    'dinov2_large',
+    'dinov2_large_reg4',
+    'dinov2_giant',
+    'dinov2_giant_reg4',
+    # Timm DINOv3-based backbones
+    'dinov3_small',
+    'dinov3_small_qkvb',  # with qkv bias
+    'dinov3_small_plus',
+    'dinov3_small_plus_qkvb',  # with qkv bias
+    'dinov3_base',
+    'dinov3_base_qkvb',  # with qkv bias
+    'dinov3_large',
+    'dinov3_large_qkvb',  # with qkv bias
+    'dinov3_huge_plus',
+    'dinov3_huge_plus_qkvb',  # with qkv bias
+    'dinov3_7b',  # no qkv bias option
+    # Timm EVA02-based backbones
+    'eva02_small_patch14_224.mim_in22k',
+    'eva02_base_patch14_224.mim_in22k',
+    'eva02_large_patch14_224.mim_in22k',
+    # Timm DeiT3-based backbones
+    'deit3_small_patch16_224.fb_in22k_ft_in1k',
+    'deit3_base_patch16_224.fb_in22k_ft_in1k',
+    'deit3_large_patch16_224.fb_in22k_ft_in1k',
+    'deit3_small_patch16_224.fb_in1k',
+    'deit3_base_patch16_224.fb_in1k',
+    'deit3_large_patch16_224.fb_in1k',
+)
+
+# Timm-based token backbones are optional.
+IS_TIMM_AVAILABLE = False
+TIMM_VERSION = None
+try:
+    import timm  # noqa: F401
+    from .vit import get_dinov2_backbone
+    from .vit import get_dinov3_backbone
+    from .vit import get_eva02_backbone
+    from .vit import get_deit3_backbone
+    IS_TIMM_AVAILABLE = True
+    TIMM_VERSION = version.parse(timm.__version__)
+except Exception:
+    warnings.warn(
+        "Could not import timm (PyTorch Image Models). "
+        "The following timm-based token backbones are disabled: "
+        f"{', '.join(KNOWN_TIMM_TOKEN_BACKBONES)}."
+    )
+
+
+# Keep dense backbones and token ViT backbones in separate registries. Dense
+# backbones expose feature-pyramid maps, token ViTs expose token sequences.
+KNOWN_TOKEN_BACKBONES = []
+
+if IS_TIMM_AVAILABLE:
+    KNOWN_TOKEN_BACKBONES += KNOWN_TIMM_TOKEN_BACKBONES
 
 
 def get_backbone(
@@ -128,7 +190,7 @@ def get_backbone(
                 **kwargs
             )
     else:
-        raise ValueError(f"Unknown backbone: {name}")
+        raise ValueError(f"Unknown backbone: '{name}'")
 
     if pretrained and pretrained_filepath is not None:
         print(f"Loading pretrained weights from: '{pretrained_filepath}'")
@@ -197,18 +259,34 @@ def get_backbone(
             old_bias = state_dict.pop('patch_embedder.0.bias')
             rgb_dim = backbone.patch_embedder.rgb_embed_dim
             if n_input_channels == 4:
-                state_dict['patch_embedder.rgb_layers.0.weight'] = old_weight[:rgb_dim, :3]
-                state_dict['patch_embedder.rgb_layers.0.bias'] = old_bias[:rgb_dim]
+                state_dict['patch_embedder.rgb_layers.0.weight'] = (
+                    old_weight[:rgb_dim, :3]
+                )
+                state_dict['patch_embedder.rgb_layers.0.bias'] = (
+                    old_bias[:rgb_dim]
+                )
 
-            state_dict['patch_embedder.depth_layers.0.weight'] = old_weight.sum(axis=1, keepdim=True)[rgb_dim:]
-            state_dict['patch_embedder.depth_layers.0.bias'] = old_bias[rgb_dim:]
+            state_dict['patch_embedder.depth_layers.0.weight'] = (
+                old_weight.sum(axis=1, keepdim=True)[rgb_dim:]
+            )
+            state_dict['patch_embedder.depth_layers.0.bias'] = (
+                old_bias[rgb_dim:]
+            )
 
             old_ln_weight = state_dict.pop('patch_embedder.2.weight')
             old_ln_bias = state_dict.pop('patch_embedder.2.bias')
-            state_dict['patch_embedder.rgb_layers.2.weight'] = old_ln_weight[:rgb_dim]
-            state_dict['patch_embedder.rgb_layers.2.bias'] = old_ln_bias[:rgb_dim]
-            state_dict['patch_embedder.depth_layers.2.weight'] = old_ln_weight[rgb_dim:]
-            state_dict['patch_embedder.depth_layers.2.bias'] = old_ln_bias[rgb_dim:]
+            state_dict['patch_embedder.rgb_layers.2.weight'] = (
+                old_ln_weight[:rgb_dim]
+            )
+            state_dict['patch_embedder.rgb_layers.2.bias'] = (
+                old_ln_bias[:rgb_dim]
+            )
+            state_dict['patch_embedder.depth_layers.2.weight'] = (
+                old_ln_weight[rgb_dim:]
+            )
+            state_dict['patch_embedder.depth_layers.2.bias'] = (
+                old_ln_bias[rgb_dim:]
+            )
 
         elif 'swin' in name and 'multi' not in name:
             dim = state_dict['patch_embedder.0.weight'].shape[1]
@@ -227,3 +305,41 @@ def get_backbone(
         backbone.load_state_dict(state_dict, strict=True)
 
     return backbone
+
+
+def get_token_backbone(
+    name: str,
+    n_input_channels: int = 3,
+    pretrained: bool = True,
+    pretrained_filepath: Optional[str] = None,
+    **kwargs: Any
+) -> Backbone:
+    if pretrained_filepath is not None:
+        raise NotImplementedError(
+            "Loading token backbones from `pretrained_filepath` is not "
+            "implemented yet. Token backbones currently load their "
+            "pretrained weights through timm via `pretrained=True` by default."
+        )
+
+    name = name.lower()
+    if 'dinov2' in name:
+        return get_dinov2_backbone(
+            name=name, pretrained=pretrained,
+            n_input_channels=n_input_channels, **kwargs,
+        )
+    if 'dinov3' in name:
+        return get_dinov3_backbone(
+            name=name, pretrained=pretrained,
+            n_input_channels=n_input_channels, **kwargs,
+        )
+    if 'eva02' in name:
+        return get_eva02_backbone(
+            name=name, pretrained=pretrained,
+            n_input_channels=n_input_channels, **kwargs,
+        )
+    if 'deit3' in name:
+        return get_deit3_backbone(
+            name=name, pretrained=pretrained,
+            n_input_channels=n_input_channels, **kwargs,
+        )
+    raise ValueError(f"Unknown token backbone: '{name}'")

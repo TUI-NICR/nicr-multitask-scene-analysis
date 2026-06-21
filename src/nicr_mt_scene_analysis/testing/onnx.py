@@ -19,7 +19,8 @@ def export_onnx_model(
     input_names: Optional[List[str]] = None,
     output_names: Optional[List[str]] = None,
     force_export: bool = False,
-    use_fallback: bool = False
+    use_fallback: bool = False,
+    opset_version: int = 11
 ) -> None:
     if not (EXPORT_ONNX_MODELS or force_export):
         return
@@ -27,7 +28,9 @@ def export_onnx_model(
     kwargs = {}
     if use_fallback:
         # set the aten fallback to true
-        kwargs['operator_export_type'] = torch.onnx.OperatorExportTypes.ONNX_ATEN_FALLBACK
+        kwargs['operator_export_type'] = (
+            torch.onnx.OperatorExportTypes.ONNX_ATEN_FALLBACK
+        )
 
     torch.onnx.export(model,
                       x,
@@ -38,7 +41,7 @@ def export_onnx_model(
                       do_constant_folding=True,
                       verbose=False,
                       training=training_mode,
-                      opset_version=11,
+                      opset_version=opset_version,
                       dynamo=False,  # new default true might also work
                       **kwargs)
 
